@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
                 }
 
                 if matches!(input.to_lowercase().as_str(), "quit" | "exit" | "q") {
-                    println!("Arrivederci!");
+                    println!("Goodbye!");
                     break;
                 }
 
@@ -58,11 +58,11 @@ async fn main() -> Result<()> {
                 }
             }
             Err(ReadlineError::Interrupted) => {
-                println!("Arrivederci!");
+                println!("Goodbye!");
                 break;
             }
             Err(ReadlineError::Eof) => {
-                println!("Arrivederci!");
+                println!("Goodbye!");
                 break;
             }
             Err(err) => {

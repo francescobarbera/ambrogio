@@ -62,7 +62,7 @@ ambrogio: Yes, you have 7 open TODOs:
 ...
 
 you: quit
-Arrivederci!
+Goodbye!
 ```
 
 ## Organiser format
