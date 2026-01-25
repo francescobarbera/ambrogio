@@ -44,13 +44,15 @@ impl ChatManager {
     }
 
     pub async fn send(&mut self, user_input: &str) -> Result<String> {
-        self.history.push(Message::user(user_input));
-
         let mut messages = vec![Message::system(&self.system_prompt)];
         messages.extend(self.history.clone());
+        messages.push(Message::user(user_input));
 
+        // History is only updated after a successful response to avoid
+        // orphaned messages when the API call fails
         let response = self.client.chat(&messages).await?;
 
+        self.history.push(Message::user(user_input));
         self.history.push(Message::assistant(&response));
 
         Ok(response)

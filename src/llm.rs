@@ -54,6 +54,11 @@ struct MessageContent {
     content: String,
 }
 
+fn build_chat_url(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    format!("{}/chat/completions", base)
+}
+
 pub struct LlmClient {
     client: Client,
     config: Config,
@@ -68,7 +73,7 @@ impl LlmClient {
     }
 
     pub async fn chat(&self, messages: &[Message]) -> Result<String> {
-        let url = format!("{}/chat/completions", self.config.base_url);
+        let url = build_chat_url(&self.config.base_url);
 
         let request = ChatRequest {
             model: self.config.model.clone(),
@@ -139,5 +144,23 @@ mod tests {
         let msg: Message = serde_json::from_str(json).unwrap();
         assert_eq!(msg.role, "assistant");
         assert_eq!(msg.content, "hi there");
+    }
+
+    #[test]
+    fn build_chat_url_without_trailing_slash() {
+        let url = build_chat_url("https://api.example.com/v1");
+        assert_eq!(url, "https://api.example.com/v1/chat/completions");
+    }
+
+    #[test]
+    fn build_chat_url_with_trailing_slash() {
+        let url = build_chat_url("https://api.example.com/v1/");
+        assert_eq!(url, "https://api.example.com/v1/chat/completions");
+    }
+
+    #[test]
+    fn build_chat_url_with_multiple_trailing_slashes() {
+        let url = build_chat_url("https://api.example.com/v1///");
+        assert_eq!(url, "https://api.example.com/v1/chat/completions");
     }
 }
