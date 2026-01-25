@@ -66,10 +66,12 @@ pub struct LlmClient {
 
 impl LlmClient {
     pub fn new(config: Config) -> Self {
-        Self {
-            client: Client::new(),
-            config,
-        }
+        let client = Client::builder()
+            .timeout(config.timeout)
+            .build()
+            .expect("Failed to build HTTP client");
+
+        Self { client, config }
     }
 
     pub async fn chat(&self, messages: &[Message]) -> Result<String> {

@@ -32,16 +32,17 @@ Handles configuration via environment variables.
 
 **Environment Variables:**
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `AMBROGIO_LLM_API_KEY` | Yes | API key for the LLM provider |
-| `AMBROGIO_LLM_URL` | Yes | Base URL of the OpenAI-compatible API |
-| `AMBROGIO_LLM_MODEL` | Yes | Model name to use |
-| `AMBROGIO_DAILY_ORGANISER_FILE` | Yes | Path to organiser file |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `AMBROGIO_LLM_API_KEY` | Yes | - | API key for the LLM provider |
+| `AMBROGIO_LLM_URL` | Yes | - | Base URL of the OpenAI-compatible API |
+| `AMBROGIO_LLM_MODEL` | Yes | - | Model name to use |
+| `AMBROGIO_DAILY_ORGANISER_FILE` | Yes | - | Path to organiser file |
+| `AMBROGIO_LLM_TIMEOUT` | No | `10` | Request timeout in seconds |
 
 **Types:**
 
-- `Config` struct: holds validated configuration (api_key, base_url, model, file_path)
+- `Config` struct: holds validated configuration (api_key, base_url, model, file_path, timeout)
 
 **Example Configurations:**
 

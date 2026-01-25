@@ -1,5 +1,8 @@
 use anyhow::Result;
 use std::env;
+use std::time::Duration;
+
+const DEFAULT_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -7,6 +10,7 @@ pub struct Config {
     pub base_url: String,
     pub model: String,
     pub file_path: String,
+    pub timeout: Duration,
 }
 
 impl Config {
@@ -24,11 +28,28 @@ impl Config {
             anyhow::anyhow!("AMBROGIO_DAILY_ORGANISER_FILE environment variable is required")
         })?;
 
+        let timeout_secs = env::var("AMBROGIO_LLM_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(DEFAULT_TIMEOUT_SECS);
+        let timeout = Duration::from_secs(timeout_secs);
+
         Ok(Config {
             api_key,
             base_url,
             model,
             file_path,
+            timeout,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_timeout_is_10_seconds() {
+        assert_eq!(DEFAULT_TIMEOUT_SECS, 10);
     }
 }
