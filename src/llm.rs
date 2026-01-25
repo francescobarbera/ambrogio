@@ -4,30 +4,38 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    System,
+    User,
+    Assistant,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
-    pub role: String,
+    pub role: Role,
     pub content: String,
 }
 
 impl Message {
     pub fn system(content: impl Into<String>) -> Self {
         Self {
-            role: "system".to_string(),
+            role: Role::System,
             content: content.into(),
         }
     }
 
     pub fn user(content: impl Into<String>) -> Self {
         Self {
-            role: "user".to_string(),
+            role: Role::User,
             content: content.into(),
         }
     }
 
     pub fn assistant(content: impl Into<String>) -> Self {
         Self {
-            role: "assistant".to_string(),
+            role: Role::Assistant,
             content: content.into(),
         }
     }
@@ -114,21 +122,21 @@ mod tests {
     #[test]
     fn message_system_has_correct_role() {
         let msg = Message::system("test content");
-        assert_eq!(msg.role, "system");
+        assert_eq!(msg.role, Role::System);
         assert_eq!(msg.content, "test content");
     }
 
     #[test]
     fn message_user_has_correct_role() {
         let msg = Message::user("user question");
-        assert_eq!(msg.role, "user");
+        assert_eq!(msg.role, Role::User);
         assert_eq!(msg.content, "user question");
     }
 
     #[test]
     fn message_assistant_has_correct_role() {
         let msg = Message::assistant("assistant response");
-        assert_eq!(msg.role, "assistant");
+        assert_eq!(msg.role, Role::Assistant);
         assert_eq!(msg.content, "assistant response");
     }
 
@@ -144,7 +152,7 @@ mod tests {
     fn message_deserializes_from_json() {
         let json = r#"{"role":"assistant","content":"hi there"}"#;
         let msg: Message = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.role, "assistant");
+        assert_eq!(msg.role, Role::Assistant);
         assert_eq!(msg.content, "hi there");
     }
 
