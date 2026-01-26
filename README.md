@@ -1,5 +1,7 @@
 # Ambrogio
 
+<img src="ambrogio.png" alt="Ambrogio logo" width="200">
+
 A terminal-based assistant that helps you query your daily organiser using an LLM.
 
 ## Installation
