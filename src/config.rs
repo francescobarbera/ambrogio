@@ -5,8 +5,8 @@ use std::time::Duration;
 const DEFAULT_TIMEOUT_SECS: u64 = 10;
 
 fn require_env(name: &str) -> Result<String> {
-    let value = env::var(name)
-        .map_err(|_| anyhow::anyhow!("{} environment variable is required", name))?;
+    let value =
+        env::var(name).map_err(|_| anyhow::anyhow!("{} environment variable is required", name))?;
 
     if value.trim().is_empty() {
         bail!("{} environment variable cannot be empty", name);
