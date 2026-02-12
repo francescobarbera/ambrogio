@@ -1,18 +1,56 @@
 mod chat;
+mod cli;
 mod config;
 mod llm;
+mod pomodoro;
+mod todo;
 
 use anyhow::Result;
+use chrono::Local;
+use clap::Parser;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::fs;
+use std::io::{self, Write};
 
 use chat::ChatManager;
-use config::Config;
+use cli::{Cli, Command, StartAction, TodoAction};
+use config::{Config, FileConfig};
 use llm::LlmClient;
+use todo::TodoStore;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        None => run_repl().await,
+        Some(Command::Todos { action }) => run_todos(action),
+        Some(Command::Start { action }) => run_start(action).await,
+    }
+}
+
+fn prompt_selection(prompt: &str, items: &[&str]) -> Result<usize> {
+    println!("{}", prompt);
+    for (i, item) in items.iter().enumerate() {
+        println!("  {}. {}", i + 1, item);
+    }
+
+    loop {
+        print!("Enter number: ");
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        match input.trim().parse::<usize>() {
+            Ok(n) if n >= 1 && n <= items.len() => return Ok(n - 1),
+            _ => println!("Please enter a number between 1 and {}", items.len()),
+        }
+    }
+}
+
+async fn run_repl() -> Result<()> {
     let config = Config::from_env()?;
 
     let organiser_content = fs::read_to_string(&config.file_path).map_err(|e| {
@@ -69,6 +107,62 @@ async fn main() -> Result<()> {
                 eprintln!("Error: {:?}", err);
                 break;
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_todos(action: TodoAction) -> Result<()> {
+    let file_config = FileConfig::from_env()?;
+    let store = TodoStore::new(file_config.todos_path);
+
+    match action {
+        TodoAction::Add { description } => {
+            store.add(&description)?;
+            println!("Added: {}", description);
+        }
+        TodoAction::List => {
+            store.print_open_todos()?;
+        }
+        TodoAction::Complete => {
+            let open = store.open_todos()?;
+            if open.is_empty() {
+                println!("No open todos to complete.");
+                return Ok(());
+            }
+
+            let items: Vec<&str> = open.iter().map(|t| t.description.as_str()).collect();
+            let selection = prompt_selection("Select a todo to complete:", &items)?;
+
+            store.complete(selection)?;
+            println!("Completed: {}", open[selection].description);
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_start(action: StartAction) -> Result<()> {
+    match action {
+        StartAction::Pomodoro => {
+            let file_config = FileConfig::from_env()?;
+            let store = TodoStore::new(file_config.todos_path);
+            let open = store.open_todos()?;
+
+            if open.is_empty() {
+                println!("No open todos. Add a todo first.");
+                return Ok(());
+            }
+
+            let items: Vec<&str> = open.iter().map(|t| t.description.as_str()).collect();
+            let selection = prompt_selection("Select a todo to focus on:", &items)?;
+
+            let started_at = Local::now().naive_local();
+            let outcome = pomodoro::run(&open[selection].description).await?;
+            let cancelled = outcome == pomodoro::Outcome::Cancelled;
+
+            store.add_pomodoro(selection, started_at, cancelled)?;
         }
     }
 

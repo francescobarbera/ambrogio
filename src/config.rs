@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use std::env;
+use std::path::PathBuf;
 use std::time::Duration;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 10;
@@ -47,6 +48,25 @@ impl Config {
     }
 }
 
+pub struct FileConfig {
+    pub todos_path: PathBuf,
+}
+
+impl FileConfig {
+    pub fn from_env() -> Result<Self> {
+        let organiser_path = require_env("AMBROGIO_DAILY_ORGANISER_FILE")?;
+        let organiser = PathBuf::from(&organiser_path);
+
+        let parent = organiser
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Cannot determine directory of organiser file"))?;
+
+        Ok(FileConfig {
+            todos_path: parent.join("todos.md"),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,5 +109,26 @@ mod tests {
         let result = require_env("TEST_MISSING_VAR");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("is required"));
+    }
+
+    #[test]
+    fn file_config_derives_todos_path_from_organiser() {
+        env::set_var(
+            "AMBROGIO_DAILY_ORGANISER_FILE",
+            "/home/user/notes/organiser.md",
+        );
+        let config = FileConfig::from_env().unwrap();
+        assert_eq!(
+            config.todos_path,
+            PathBuf::from("/home/user/notes/todos.md")
+        );
+        env::remove_var("AMBROGIO_DAILY_ORGANISER_FILE");
+    }
+
+    #[test]
+    fn file_config_errors_on_missing_env_var() {
+        env::remove_var("AMBROGIO_DAILY_ORGANISER_FILE");
+        let result = FileConfig::from_env();
+        assert!(result.is_err());
     }
 }

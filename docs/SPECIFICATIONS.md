@@ -4,27 +4,52 @@ This document describes the current implementation of Ambrogio.
 
 ## Overview
 
-Ambrogio is a CLI chat tool that queries a daily organiser markdown file using an LLM. It provides a REPL interface for natural language questions about schedule, tasks, and meetings.
+Ambrogio is a CLI tool with subcommands for managing todos, running pomodoro focus sessions, and chatting with a daily organiser via an LLM. Running without arguments starts the REPL chat interface.
+
+## CLI Commands
+
+```
+ambrogio                        → REPL chat (default, requires LLM env vars)
+ambrogio todos add 'buy milk'   → Append a todo to todos.md
+ambrogio todos list              → Print open todos
+ambrogio todos complete          → Interactive selection, mark as done
+ambrogio start pomodoro          → Interactive todo selection, 25-min countdown
+```
+
+The `todos` and `start` subcommands only require `AMBROGIO_DAILY_ORGANISER_FILE` (via `FileConfig`). The REPL requires the full LLM configuration (via `Config`).
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    main.rs                          │
-│                  (REPL loop)                        │
-├─────────────────────────────────────────────────────┤
-│                    chat.rs                          │
-│         (conversation history + system prompt)      │
+│           (CLI dispatch + REPL loop)                │
+├──────────┬──────────┬──────────┬────────────────────┤
+│  cli.rs  │ todo.rs  │pomodoro.rs│    chat.rs        │
+│  (clap)  │ (store)  │ (timer)  │ (conversation)     │
+├──────────┴──────────┴──────────┴────────────────────┤
+│                   config.rs                         │
+│         (Config + FileConfig from env)              │
 ├─────────────────────────────────────────────────────┤
 │                    llm.rs                           │
 │            (OpenAI-compatible API client)           │
-├─────────────────────────────────────────────────────┤
-│                   config.rs                         │
-│              (environment variables)                │
 └─────────────────────────────────────────────────────┘
 ```
 
 ## Modules
+
+### `cli.rs`
+
+Clap derive structs for CLI parsing.
+
+**Types:**
+
+- `Cli`: top-level parser with optional `Command`
+- `Command`: `Todos { action }` or `Start { action }`
+- `TodoAction`: `Add { description }`, `List`, `Complete`
+- `StartAction`: `Pomodoro`
+
+No args (`None`) falls through to the REPL.
 
 ### `config.rs`
 
@@ -34,15 +59,16 @@ Handles configuration via environment variables.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `AMBROGIO_LLM_API_KEY` | Yes | - | API key for the LLM provider |
-| `AMBROGIO_LLM_URL` | Yes | - | Base URL of the OpenAI-compatible API |
-| `AMBROGIO_LLM_MODEL` | Yes | - | Model name to use |
+| `AMBROGIO_LLM_API_KEY` | Yes (REPL only) | - | API key for the LLM provider |
+| `AMBROGIO_LLM_URL` | Yes (REPL only) | - | Base URL of the OpenAI-compatible API |
+| `AMBROGIO_LLM_MODEL` | Yes (REPL only) | - | Model name to use |
 | `AMBROGIO_DAILY_ORGANISER_FILE` | Yes | - | Path to organiser file |
 | `AMBROGIO_LLM_TIMEOUT` | No | `10` | Request timeout in seconds |
 
 **Types:**
 
-- `Config` struct: holds validated configuration (api_key, base_url, model, file_path, timeout)
+- `Config`: full LLM configuration (api_key, base_url, model, file_path, timeout) — used by REPL
+- `FileConfig`: lightweight config with just `todos_path` — used by `todos` and `start` subcommands. Derives `todos_path` from the parent directory of `AMBROGIO_DAILY_ORGANISER_FILE`.
 
 **Example Configurations:**
 
@@ -52,6 +78,48 @@ Handles configuration via environment variables.
 | OpenRouter | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.3-70b-instruct` |
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o` |
 | Ollama | `http://localhost:11434/v1` | `llama3` |
+
+### `todo.rs`
+
+File-backed todo store using markdown checkboxes.
+
+**Types:**
+
+- `Todo`: `{ description: String, done: bool }`
+- `TodoStore`: wraps a `PathBuf`, provides `add()`, `load_all()`, `open_todos()`, `complete(index)`, `add_pomodoro(open_index, started_at, cancelled)`
+
+**File Format (`todos.md`):**
+
+```markdown
+- [ ] open task
+- [x] completed task
+```
+
+**Behavior:**
+
+- `add()` creates the file if missing, appends `- [ ] description`
+- `load_all()` parses all `- [ ] ` and `- [x] ` lines, ignores everything else
+- `open_todos()` returns only unchecked items
+- `complete(index)` rewrites the file, changing the nth open todo's `[ ]` to `[x]`
+- `add_pomodoro(open_index, started_at, cancelled)` inserts a pomodoro entry under the nth open todo, after any existing pomodoro sub-items
+- `print_open_todos()` prints numbered list of open todos
+
+### `pomodoro.rs`
+
+Countdown timer for focus sessions.
+
+**Constants:**
+
+- `POMODORO_DURATION`: 25 minutes
+
+**Types:**
+
+- `Outcome`: enum with `Completed` and `Cancelled` variants
+
+**Functions:**
+
+- `run(description)`: starts a 25-minute countdown, updating the terminal every second with `MM:SS - description`. Plays terminal bell (`\x07`) on completion. Ctrl+C cancels. Returns `Outcome::Completed` or `Outcome::Cancelled`.
+- `format_countdown(duration)`: formats a `Duration` as `MM:SS`
 
 ### `llm.rs`
 
@@ -93,17 +161,16 @@ Includes:
 
 ### `main.rs`
 
-Entry point with REPL loop.
+Entry point with CLI dispatch.
 
 **Flow:**
 
-1. Load config from environment
-2. Read organiser file
-3. Initialize chat manager
-4. Start REPL with rustyline
-5. Process user input until quit
+1. Parse CLI args with clap
+2. No subcommand → `run_repl()` (loads full `Config`, reads organiser, starts REPL)
+3. `todos` subcommand → `run_todos()` (loads `FileConfig`, operates on `TodoStore`)
+4. `start pomodoro` → `run_start_pomodoro()` (loads `FileConfig`, selects todo, runs countdown, records pomodoro to `todos.md`)
 
-**Commands:**
+**REPL Commands:**
 
 - `quit`, `exit`, `q`: exit the program
 - Ctrl+C, Ctrl+D: exit the program
@@ -131,6 +198,19 @@ Expected markdown structure:
 - Completed tasks: `[DONE]` suffix
 - Free-form notes allowed between entries
 
+## Todo File Format
+
+Located in the same directory as the organiser file, named `todos.md`.
+
+```markdown
+- [ ] open task
+  - 🍅 2026-02-12 10:00
+  - 🍅 2026-02-12 14:30 cancelled
+- [x] completed task
+```
+
+**Pomodoro entries** are indented sub-items under their todo. Format: `  - 🍅 YYYY-MM-DD HH:MM [cancelled]`. Absence of `cancelled` means the pomodoro ran to completion. Pomodoro lines are ignored by `load_all()` and `open_todos()`.
+
 ## Dependencies
 
 | Crate | Version | Purpose |
@@ -142,6 +222,13 @@ Expected markdown structure:
 | rustyline | 14 | REPL with history |
 | anyhow | 1 | Error handling |
 | chrono | 0.4 | Date/time for system prompt |
+| clap | 4 | CLI subcommand parsing |
+
+**Dev Dependencies:**
+
+| Crate | Version | Purpose |
+|-------|---------|---------|
+| tempfile | 3 | Temp files for tests |
 
 ## Limitations
 

@@ -1,0 +1,98 @@
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "ambrogio", about = "Your daily organiser assistant")]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+pub enum Command {
+    /// Manage your todo list
+    Todos {
+        #[command(subcommand)]
+        action: TodoAction,
+    },
+    /// Start a focus session
+    Start {
+        #[command(subcommand)]
+        action: StartAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TodoAction {
+    /// Add a new todo
+    Add {
+        /// The task description
+        description: String,
+    },
+    /// List open todos
+    List,
+    /// Mark a todo as complete
+    Complete,
+}
+
+#[derive(Subcommand)]
+pub enum StartAction {
+    /// Start a 25-minute pomodoro timer
+    Pomodoro,
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::*;
+
+    #[test]
+    fn no_args_returns_none_command() {
+        let cli = Cli::parse_from(["ambrogio"]);
+        assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn parses_todos_add() {
+        let cli = Cli::parse_from(["ambrogio", "todos", "add", "buy milk"]);
+        match cli.command {
+            Some(Command::Todos {
+                action: TodoAction::Add { description },
+            }) => assert_eq!(description, "buy milk"),
+            _ => panic!("expected Todos Add"),
+        }
+    }
+
+    #[test]
+    fn parses_todos_list() {
+        let cli = Cli::parse_from(["ambrogio", "todos", "list"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Todos {
+                action: TodoAction::List
+            })
+        ));
+    }
+
+    #[test]
+    fn parses_todos_complete() {
+        let cli = Cli::parse_from(["ambrogio", "todos", "complete"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Todos {
+                action: TodoAction::Complete
+            })
+        ));
+    }
+
+    #[test]
+    fn parses_start_pomodoro() {
+        let cli = Cli::parse_from(["ambrogio", "start", "pomodoro"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Start {
+                action: StartAction::Pomodoro
+            })
+        ));
+    }
+}
