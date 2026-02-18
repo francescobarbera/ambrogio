@@ -3,10 +3,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn default_hooks_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("ambrogio")
-        .join("hooks")
+    dirs::home_dir()
+        .expect("cannot resolve home directory")
+        .join(".config/ambrogio/hooks")
 }
 
 fn resolve_hook(base: &Path, feature: &str, event: &str) -> PathBuf {
