@@ -14,10 +14,10 @@ pub enum Command {
         #[command(subcommand)]
         action: TodoAction,
     },
-    /// Start a focus session
-    Start {
+    /// Pomodoro focus sessions
+    Pomodoro {
         #[command(subcommand)]
-        action: StartAction,
+        action: PomodoroAction,
     },
 }
 
@@ -35,9 +35,9 @@ pub enum TodoAction {
 }
 
 #[derive(Subcommand)]
-pub enum StartAction {
+pub enum PomodoroAction {
     /// Start a 25-minute pomodoro timer
-    Pomodoro,
+    Start,
 }
 
 #[cfg(test)]
@@ -86,12 +86,12 @@ mod tests {
     }
 
     #[test]
-    fn parses_start_pomodoro() {
-        let cli = Cli::parse_from(["ambrogio", "start", "pomodoro"]);
+    fn parses_pomodoro_start() {
+        let cli = Cli::parse_from(["ambrogio", "pomodoro", "start"]);
         assert!(matches!(
             cli.command,
-            Some(Command::Start {
-                action: StartAction::Pomodoro
+            Some(Command::Pomodoro {
+                action: PomodoroAction::Start
             })
         ));
     }

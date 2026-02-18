@@ -14,7 +14,7 @@ use std::fs;
 use std::io::{self, Write};
 
 use chat::ChatManager;
-use cli::{Cli, Command, StartAction, TodoAction};
+use cli::{Cli, Command, PomodoroAction, TodoAction};
 use config::{Config, FileConfig};
 use llm::LlmClient;
 use todo::TodoStore;
@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
     match cli.command {
         None => run_repl().await,
         Some(Command::Todos { action }) => run_todos(action),
-        Some(Command::Start { action }) => run_start(action).await,
+        Some(Command::Pomodoro { action }) => run_pomodoro(action).await,
     }
 }
 
@@ -143,9 +143,9 @@ fn run_todos(action: TodoAction) -> Result<()> {
     Ok(())
 }
 
-async fn run_start(action: StartAction) -> Result<()> {
+async fn run_pomodoro(action: PomodoroAction) -> Result<()> {
     match action {
-        StartAction::Pomodoro => {
+        PomodoroAction::Start => {
             let file_config = FileConfig::from_env()?;
             let store = TodoStore::new(file_config.todos_path);
             let open = store.open_todos()?;

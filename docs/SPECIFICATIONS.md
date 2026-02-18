@@ -13,7 +13,7 @@ ambrogio                        → REPL chat (default, requires LLM env vars)
 ambrogio todos add 'buy milk'   → Append a todo to todos.md
 ambrogio todos list              → Print open todos
 ambrogio todos complete          → Interactive selection, mark as done
-ambrogio start pomodoro          → Interactive todo selection, 25-min countdown
+ambrogio pomodoro start          → Interactive todo selection, 25-min countdown
 ```
 
 The `todos` and `start` subcommands only require `AMBROGIO_DAILY_ORGANISER_FILE` (via `FileConfig`). The REPL requires the full LLM configuration (via `Config`).
@@ -45,9 +45,9 @@ Clap derive structs for CLI parsing.
 **Types:**
 
 - `Cli`: top-level parser with optional `Command`
-- `Command`: `Todos { action }` or `Start { action }`
+- `Command`: `Todos { action }` or `Pomodoro { action }`
 - `TodoAction`: `Add { description }`, `List`, `Complete`
-- `StartAction`: `Pomodoro`
+- `PomodoroAction`: `Start`
 
 No args (`None`) falls through to the REPL.
 
@@ -168,7 +168,7 @@ Entry point with CLI dispatch.
 1. Parse CLI args with clap
 2. No subcommand → `run_repl()` (loads full `Config`, reads organiser, starts REPL)
 3. `todos` subcommand → `run_todos()` (loads `FileConfig`, operates on `TodoStore`)
-4. `start pomodoro` → `run_start_pomodoro()` (loads `FileConfig`, selects todo, runs countdown, records pomodoro to `todos.md`)
+4. `pomodoro start` → `run_pomodoro()` (loads `FileConfig`, selects todo, runs countdown, records pomodoro to `todos.md`)
 
 **REPL Commands:**
 
