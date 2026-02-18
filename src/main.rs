@@ -1,6 +1,7 @@
 mod chat;
 mod cli;
 mod config;
+mod hooks;
 mod llm;
 mod pomodoro;
 mod todo;
@@ -163,6 +164,10 @@ async fn run_pomodoro(action: PomodoroAction) -> Result<()> {
             let cancelled = outcome == pomodoro::Outcome::Cancelled;
 
             store.add_pomodoro(selection, started_at, cancelled)?;
+
+            if outcome == pomodoro::Outcome::Completed {
+                hooks::run("pomodoro", "stop")?;
+            }
         }
     }
 

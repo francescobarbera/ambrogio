@@ -24,13 +24,13 @@ The `todos` and `start` subcommands only require `AMBROGIO_DAILY_ORGANISER_FILE`
 ┌─────────────────────────────────────────────────────┐
 │                    main.rs                          │
 │           (CLI dispatch + REPL loop)                │
-├──────────┬──────────┬──────────┬────────────────────┤
+├──────────┬──────────┬───────────┬───────────────────┤
 │  cli.rs  │ todo.rs  │pomodoro.rs│    chat.rs        │
-│  (clap)  │ (store)  │ (timer)  │ (conversation)     │
-├──────────┴──────────┴──────────┴────────────────────┤
-│                   config.rs                         │
-│         (Config + FileConfig from env)              │
-├─────────────────────────────────────────────────────┤
+│  (clap)  │ (store)  │ (timer)   │ (conversation)    │
+├──────────┴──────────┴───────────┴───────────────────┤
+│              hooks.rs     │      config.rs          │
+│         (event scripts)   │  (env configuration)    │
+├───────────────────────────┴─────────────────────────┤
 │                    llm.rs                           │
 │            (OpenAI-compatible API client)           │
 └─────────────────────────────────────────────────────┘
@@ -223,12 +223,38 @@ Located in the same directory as the organiser file, named `todos.md`.
 | anyhow | 1 | Error handling |
 | chrono | 0.4 | Date/time for system prompt |
 | clap | 4 | CLI subcommand parsing |
+| dirs | 6 | Platform config directory resolution |
 
 **Dev Dependencies:**
 
 | Crate | Version | Purpose |
 |-------|---------|---------|
 | tempfile | 3 | Temp files for tests |
+
+## Hooks
+
+Ambrogio supports user-defined shell scripts that run on specific events.
+
+**Location:** `~/.config/ambrogio/hooks/{feature}/{event}.sh`
+
+**Behavior:**
+
+- If the hook file doesn't exist, nothing happens (silent no-op)
+- If it exists, it's executed via `sh` and its stdout/stderr are printed to the terminal
+- If the script exits with a non-zero status, a warning is printed but the main flow is not interrupted
+- No environment variables are passed to hooks
+
+**Available Hooks:**
+
+| Hook path | Trigger |
+|-----------|---------|
+| `pomodoro/stop.sh` | After a pomodoro completes successfully (not on cancellation) |
+
+### `hooks.rs`
+
+**Functions:**
+
+- `run(feature, event)`: resolves and executes `~/.config/ambrogio/hooks/{feature}/{event}.sh`
 
 ## Limitations
 
