@@ -14,6 +14,11 @@ pub enum Command {
         #[command(subcommand)]
         action: TodoAction,
     },
+    /// Manage projects
+    Projects {
+        #[command(subcommand)]
+        action: ProjectAction,
+    },
     /// Pomodoro focus sessions
     Pomodoro {
         #[command(subcommand)]
@@ -32,6 +37,19 @@ pub enum TodoAction {
     List,
     /// Mark a todo as complete
     Complete,
+}
+
+#[derive(Subcommand)]
+pub enum ProjectAction {
+    /// List all projects
+    List,
+    /// Add a new project
+    Add {
+        /// The project name
+        name: String,
+    },
+    /// Delete a project and all its todos
+    Delete,
 }
 
 #[derive(Subcommand)]
@@ -81,6 +99,39 @@ mod tests {
             cli.command,
             Some(Command::Todos {
                 action: TodoAction::Complete
+            })
+        ));
+    }
+
+    #[test]
+    fn parses_projects_list() {
+        let cli = Cli::parse_from(["ambrogio", "projects", "list"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Projects {
+                action: ProjectAction::List
+            })
+        ));
+    }
+
+    #[test]
+    fn parses_projects_add() {
+        let cli = Cli::parse_from(["ambrogio", "projects", "add", "Work"]);
+        match cli.command {
+            Some(Command::Projects {
+                action: ProjectAction::Add { name },
+            }) => assert_eq!(name, "Work"),
+            _ => panic!("expected Projects Add"),
+        }
+    }
+
+    #[test]
+    fn parses_projects_delete() {
+        let cli = Cli::parse_from(["ambrogio", "projects", "delete"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Projects {
+                action: ProjectAction::Delete
             })
         ));
     }

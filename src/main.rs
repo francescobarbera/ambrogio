@@ -15,7 +15,7 @@ use std::fs;
 use std::io::{self, Write};
 
 use chat::ChatManager;
-use cli::{Cli, Command, PomodoroAction, TodoAction};
+use cli::{Cli, Command, PomodoroAction, ProjectAction, TodoAction};
 use config::{Config, FileConfig};
 use llm::LlmClient;
 use todo::TodoStore;
@@ -27,6 +27,7 @@ async fn main() -> Result<()> {
     match cli.command {
         None => run_repl().await,
         Some(Command::Todos { action }) => run_todos(action),
+        Some(Command::Projects { action }) => run_projects(action),
         Some(Command::Pomodoro { action }) => run_pomodoro(action).await,
     }
 }
@@ -114,14 +115,73 @@ async fn run_repl() -> Result<()> {
     Ok(())
 }
 
+fn run_projects(action: ProjectAction) -> Result<()> {
+    let file_config = FileConfig::from_env()?;
+    let store = TodoStore::new(file_config.todos_path);
+
+    match action {
+        ProjectAction::List => {
+            let projects = store.projects()?;
+            if projects.is_empty() {
+                println!("No projects.");
+            } else {
+                for (i, project) in projects.iter().enumerate() {
+                    println!("  {}. {}", i + 1, project);
+                }
+            }
+        }
+        ProjectAction::Add { name } => {
+            store.add_project(&name)?;
+            println!("Added project: {}", name);
+        }
+        ProjectAction::Delete => {
+            let projects = store.projects()?;
+            if projects.is_empty() {
+                println!("No projects to delete.");
+                return Ok(());
+            }
+
+            let items: Vec<&str> = projects.iter().map(|p| p.as_str()).collect();
+            let selection = prompt_selection("Select a project to delete:", &items)?;
+
+            print!(
+                "Delete '{}' and all its todos? (y/N): ",
+                projects[selection]
+            );
+            io::stdout().flush()?;
+
+            let mut confirm = String::new();
+            io::stdin().read_line(&mut confirm)?;
+
+            if confirm.trim().eq_ignore_ascii_case("y") {
+                store.delete_project(&projects[selection])?;
+                println!("Deleted project: {}", projects[selection]);
+            } else {
+                println!("Cancelled.");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn run_todos(action: TodoAction) -> Result<()> {
     let file_config = FileConfig::from_env()?;
     let store = TodoStore::new(file_config.todos_path);
 
     match action {
         TodoAction::Add { description } => {
-            store.add(&description)?;
-            println!("Added: {}", description);
+            let projects = store.projects()?;
+            if projects.is_empty() {
+                println!("No projects. Add a project first with: ambrogio projects add <name>");
+                return Ok(());
+            }
+
+            let items: Vec<&str> = projects.iter().map(|p| p.as_str()).collect();
+            let selection = prompt_selection("Select a project:", &items)?;
+
+            store.add(&projects[selection], &description)?;
+            println!("Added to {}: {}", projects[selection], description);
         }
         TodoAction::List => {
             store.print_open_todos()?;
@@ -133,8 +193,8 @@ fn run_todos(action: TodoAction) -> Result<()> {
                 return Ok(());
             }
 
-            let items: Vec<&str> = open.iter().map(|t| t.description.as_str()).collect();
-            let selection = prompt_selection("Select a todo to complete:", &items)?;
+            print_open_todos_for_selection(&open);
+            let selection = read_todo_number(open.len())?;
 
             store.complete(selection)?;
             println!("Completed: {}", open[selection].description);
@@ -142,6 +202,33 @@ fn run_todos(action: TodoAction) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn print_open_todos_for_selection(todos: &[todo::Todo]) {
+    println!("Select a todo to complete:");
+    let mut current_project = "";
+    for (i, todo) in todos.iter().enumerate() {
+        if todo.project != current_project {
+            current_project = &todo.project;
+            println!("\n  ## {}", current_project);
+        }
+        println!("  {}. {}", i + 1, todo.description);
+    }
+}
+
+fn read_todo_number(count: usize) -> Result<usize> {
+    loop {
+        print!("Enter number: ");
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        match input.trim().parse::<usize>() {
+            Ok(n) if n >= 1 && n <= count => return Ok(n - 1),
+            _ => println!("Please enter a number between 1 and {}", count),
+        }
+    }
 }
 
 async fn run_pomodoro(action: PomodoroAction) -> Result<()> {
@@ -156,8 +243,16 @@ async fn run_pomodoro(action: PomodoroAction) -> Result<()> {
                 return Ok(());
             }
 
-            let items: Vec<&str> = open.iter().map(|t| t.description.as_str()).collect();
-            let selection = prompt_selection("Select a todo to focus on:", &items)?;
+            println!("Select a todo to focus on:");
+            let mut current_project = "";
+            for (i, todo) in open.iter().enumerate() {
+                if todo.project != current_project {
+                    current_project = &todo.project;
+                    println!("\n  ## {}", current_project);
+                }
+                println!("  {}. {}", i + 1, todo.description);
+            }
+            let selection = read_todo_number(open.len())?;
 
             let started_at = Local::now().naive_local();
             let outcome = pomodoro::run(&open[selection].description).await?;
