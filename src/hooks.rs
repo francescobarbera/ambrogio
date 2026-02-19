@@ -23,7 +23,7 @@ fn run_with_base(base: &Path, feature: &str, event: &str) -> Result<()> {
         return Ok(());
     }
 
-    let output = Command::new("sh").arg(&path).output()?;
+    let output = Command::new("sh").arg(&path).env_clear().output()?;
 
     if !output.stdout.is_empty() {
         print!("{}", String::from_utf8_lossy(&output.stdout));
@@ -69,6 +69,27 @@ mod tests {
 
         assert!(marker.exists(), "hook script did not run");
         assert_eq!(fs::read_to_string(&marker).unwrap().trim(), "ran");
+    }
+
+    #[test]
+    fn hook_does_not_inherit_parent_env() {
+        let dir = TempDir::new().unwrap();
+        let hook_dir = dir.path().join("test");
+        fs::create_dir_all(&hook_dir).unwrap();
+
+        let marker = dir.path().join("env_leak.txt");
+        let script = format!(
+            "#!/bin/sh\necho \"$AMBROGIO_LLM_API_KEY\" > {}",
+            marker.display()
+        );
+        fs::write(hook_dir.join("check.sh"), script).unwrap();
+
+        std::env::set_var("AMBROGIO_LLM_API_KEY", "secret-key-12345");
+        run_with_base(dir.path(), "test", "check").unwrap();
+        std::env::remove_var("AMBROGIO_LLM_API_KEY");
+
+        let content = fs::read_to_string(&marker).unwrap();
+        assert_eq!(content.trim(), "", "hook should not see parent env vars");
     }
 
     #[test]
