@@ -24,10 +24,10 @@ pub async fn run(description: &str) -> Result<Outcome> {
     let mut remaining = POMODORO_DURATION;
 
     loop {
+        let countdown = format_countdown(remaining);
         print!(
-            "\r\x1b[K  {} - {}",
-            format_countdown(remaining),
-            description
+            "\x1b]0;🍅 {} - {}\x07\r\x1b[K  {} - {}",
+            countdown, description, countdown, description
         );
         io::stdout().flush()?;
 
@@ -41,12 +41,14 @@ pub async fn run(description: &str) -> Result<Outcome> {
                 remaining = remaining.saturating_sub(Duration::from_secs(1));
             }
             _ = tokio::signal::ctrl_c() => {
+                print!("\x1b]0;\x07");
                 println!("\n\nPomodoro cancelled.");
                 return Ok(Outcome::Cancelled);
             }
         }
     }
 
+    print!("\x1b]0;\x07");
     print!("\x07");
     println!("\n\nPomodoro complete!");
 
