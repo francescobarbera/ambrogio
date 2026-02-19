@@ -4,19 +4,22 @@ This document describes the current implementation of Ambrogio.
 
 ## Overview
 
-Ambrogio is a CLI tool with subcommands for managing todos, running pomodoro focus sessions, and chatting with a daily organiser via an LLM. Running without arguments starts the REPL chat interface.
+Ambrogio is a CLI tool with subcommands for managing todos, projects, running pomodoro focus sessions, and chatting with a daily organiser via an LLM. Running without arguments starts the REPL chat interface.
 
 ## CLI Commands
 
 ```
-ambrogio                        → REPL chat (default, requires LLM env vars)
-ambrogio todos add 'buy milk'   → Append a todo to todos.md
-ambrogio todos list              → Print open todos
-ambrogio todos complete          → Interactive selection, mark as done
-ambrogio pomodoro start          → Interactive todo selection, 25-min countdown
+ambrogio                            → REPL chat (default, requires LLM env vars)
+ambrogio projects list               → List all projects
+ambrogio projects add 'Work'         → Create a new project
+ambrogio projects delete             → Interactive project deletion with confirmation
+ambrogio todos add 'buy milk'        → Add a todo (prompts for project selection)
+ambrogio todos list                  → Print open todos grouped by project
+ambrogio todos complete              → Interactive selection, mark as done
+ambrogio pomodoro start              → Interactive todo selection, 25-min countdown
 ```
 
-The `todos` and `start` subcommands only require `AMBROGIO_DAILY_ORGANISER_FILE` (via `FileConfig`). The REPL requires the full LLM configuration (via `Config`).
+The `todos`, `projects`, and `pomodoro` subcommands only require `AMBROGIO_DAILY_ORGANISER_FILE` (via `FileConfig`). The REPL requires the full LLM configuration (via `Config`).
 
 ## Architecture
 
@@ -45,8 +48,9 @@ Clap derive structs for CLI parsing.
 **Types:**
 
 - `Cli`: top-level parser with optional `Command`
-- `Command`: `Todos { action }` or `Pomodoro { action }`
+- `Command`: `Todos { action }`, `Projects { action }`, or `Pomodoro { action }`
 - `TodoAction`: `Add { description }`, `List`, `Complete`
+- `ProjectAction`: `List`, `Add { name }`, `Delete`
 - `PomodoroAction`: `Start`
 
 No args (`None`) falls through to the REPL.
@@ -68,7 +72,7 @@ Handles configuration via environment variables.
 **Types:**
 
 - `Config`: full LLM configuration (api_key, base_url, model, file_path, timeout) — used by REPL
-- `FileConfig`: lightweight config with just `todos_path` — used by `todos` and `start` subcommands. Derives `todos_path` from the parent directory of `AMBROGIO_DAILY_ORGANISER_FILE`.
+- `FileConfig`: lightweight config with just `todos_path` — used by `todos`, `projects`, and `pomodoro` subcommands. Derives `todos_path` from the parent directory of `AMBROGIO_DAILY_ORGANISER_FILE`.
 
 **Example Configurations:**
 
@@ -81,28 +85,44 @@ Handles configuration via environment variables.
 
 ### `todo.rs`
 
-File-backed todo store using markdown checkboxes.
+File-backed todo store using markdown checkboxes, grouped by project.
 
 **Types:**
 
-- `Todo`: `{ description: String, done: bool }`
-- `TodoStore`: wraps a `PathBuf`, provides `add()`, `load_all()`, `open_todos()`, `complete(index)`, `add_pomodoro(open_index, started_at, cancelled)`
+- `Todo`: `{ description: String, done: bool, project: String }`
+- `TodoStore`: wraps a `PathBuf`, provides project and todo management methods
 
 **File Format (`todos.md`):**
 
+Todos are grouped under `## Project Name` headers:
+
 ```markdown
+## Work
 - [ ] open task
+  - 🍅 2026-02-12 10:00
+  - 🍅 2026-02-12 14:30 cancelled
 - [x] completed task
+
+## Personal
+- [ ] buy milk
 ```
 
-**Behavior:**
+Every todo must belong to a project. Todos without a `## ` header above them are ignored by `load_all()`.
 
-- `add()` creates the file if missing, appends `- [ ] description`
-- `load_all()` parses all `- [ ] ` and `- [x] ` lines, ignores everything else
-- `open_todos()` returns only unchecked items
-- `complete(index)` rewrites the file, changing the nth open todo's `[ ]` to `[x]`
+**Project Methods:**
+
+- `projects()` returns ordered list of project names from `## ` headers
+- `add_project(name)` appends a `## name` header; creates file if missing; rejects duplicates
+- `delete_project(name)` removes the project header and all its content (todos, pomodoros)
+
+**Todo Methods:**
+
+- `add(project, description)` inserts `- [ ] description` at the end of the named project section
+- `load_all()` parses all `- [ ] ` and `- [x] ` lines with their project context, ignores pomodoro sub-items
+- `open_todos()` returns only unchecked items with project info
+- `complete(index)` rewrites the file, changing the nth open todo's `[ ]` to `[x]` (global index across all projects)
 - `add_pomodoro(open_index, started_at, cancelled)` inserts a pomodoro entry under the nth open todo, after any existing pomodoro sub-items
-- `print_open_todos()` prints numbered list of open todos
+- `print_open_todos()` prints open todos grouped by project with global sequential numbering
 
 ### `pomodoro.rs`
 
@@ -168,7 +188,15 @@ Entry point with CLI dispatch.
 1. Parse CLI args with clap
 2. No subcommand → `run_repl()` (loads full `Config`, reads organiser, starts REPL)
 3. `todos` subcommand → `run_todos()` (loads `FileConfig`, operates on `TodoStore`)
-4. `pomodoro start` → `run_pomodoro()` (loads `FileConfig`, selects todo, runs countdown, records pomodoro to `todos.md`)
+4. `projects` subcommand → `run_projects()` (loads `FileConfig`, operates on `TodoStore`)
+5. `pomodoro start` → `run_pomodoro()` (loads `FileConfig`, selects todo, runs countdown, records pomodoro to `todos.md`)
+
+**Interactive Flows:**
+
+- `todos add`: prompts for project selection before adding the todo
+- `todos complete`: displays todos grouped by project with global numbering, prompts for selection
+- `projects delete`: prompts for project selection, then asks for `y/N` confirmation before deleting project and all its todos
+- `pomodoro start`: displays todos grouped by project with global numbering, prompts for selection
 
 **REPL Commands:**
 
@@ -203,11 +231,18 @@ Expected markdown structure:
 Located in the same directory as the organiser file, named `todos.md`.
 
 ```markdown
+## Work
 - [ ] open task
   - 🍅 2026-02-12 10:00
   - 🍅 2026-02-12 14:30 cancelled
 - [x] completed task
+
+## Personal
+- [ ] buy milk
+- [ ] call dentist
 ```
+
+**Projects** are `## ` headers. Every todo must belong to a project.
 
 **Pomodoro entries** are indented sub-items under their todo. Format: `  - 🍅 YYYY-MM-DD HH:MM [cancelled]`. Absence of `cancelled` means the pomodoro ran to completion. Pomodoro lines are ignored by `load_all()` and `open_todos()`.
 
