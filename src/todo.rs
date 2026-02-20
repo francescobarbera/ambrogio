@@ -195,6 +195,40 @@ impl TodoStore {
         write_lines(&self.path, &new_lines, content.ends_with('\n'))
     }
 
+    pub fn add_note(&self, open_index: usize, text: &str) -> Result<()> {
+        let content = fs::read_to_string(&self.path)?;
+        let lines: Vec<&str> = content.lines().collect();
+        let target = find_open_todo_line(&lines, open_index)?;
+
+        let mut insert_at = target + 1;
+        while insert_at < lines.len() && lines[insert_at].starts_with("  ") {
+            insert_at += 1;
+        }
+
+        let note_line = format!("  - 📝 {}", text);
+
+        let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        new_lines.insert(insert_at, note_line);
+
+        write_lines(&self.path, &new_lines, content.ends_with('\n'))
+    }
+
+    pub fn delete(&self, open_index: usize) -> Result<()> {
+        let content = fs::read_to_string(&self.path)?;
+        let lines: Vec<&str> = content.lines().collect();
+        let target = find_open_todo_line(&lines, open_index)?;
+
+        let mut end = target + 1;
+        while end < lines.len() && lines[end].starts_with("  ") {
+            end += 1;
+        }
+
+        let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        new_lines.drain(target..end);
+
+        write_lines(&self.path, &new_lines, content.ends_with('\n'))
+    }
+
     pub fn complete(&self, index: usize) -> Result<()> {
         let content = fs::read_to_string(&self.path)?;
         let lines: Vec<&str> = content.lines().collect();
@@ -210,7 +244,7 @@ impl TodoStore {
         let todos = self.open_todos()?;
 
         if todos.is_empty() {
-            println!("No open todos.");
+            println!("No open tasks.");
             return Ok(());
         }
 
@@ -595,6 +629,100 @@ mod tests {
         let (store, _) = store_with_content(&dir, "## Work\n- [ ] only one\n");
 
         let result = store.add_pomodoro(5, datetime(2026, 2, 12, 10, 0), false);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("out of bounds"));
+    }
+
+    #[test]
+    fn add_note_inserts_under_correct_todo() {
+        let dir = TempDir::new().unwrap();
+        let (store, path) = store_with_content(&dir, "## Work\n- [ ] first\n- [ ] second\n");
+
+        store.add_note(0, "important detail").unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            content,
+            "## Work\n- [ ] first\n  - 📝 important detail\n- [ ] second\n"
+        );
+    }
+
+    #[test]
+    fn add_note_appends_after_existing_sub_items() {
+        let dir = TempDir::new().unwrap();
+        let (store, path) = store_with_content(
+            &dir,
+            "## Work\n- [ ] task\n  - 🍅 2026-02-12 10:00\n- [ ] other\n",
+        );
+
+        store.add_note(0, "a note").unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            content,
+            "## Work\n- [ ] task\n  - 🍅 2026-02-12 10:00\n  - 📝 a note\n- [ ] other\n"
+        );
+    }
+
+    #[test]
+    fn add_note_alongside_pomodoros_and_existing_notes() {
+        let dir = TempDir::new().unwrap();
+        let (store, path) = store_with_content(
+            &dir,
+            "## Work\n- [ ] task\n  - 🍅 2026-02-12 10:00\n  - 📝 first note\n- [ ] other\n",
+        );
+
+        store.add_note(0, "second note").unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            content,
+            "## Work\n- [ ] task\n  - 🍅 2026-02-12 10:00\n  - 📝 first note\n  - 📝 second note\n- [ ] other\n"
+        );
+    }
+
+    #[test]
+    fn add_note_errors_on_out_of_bounds() {
+        let dir = TempDir::new().unwrap();
+        let (store, _) = store_with_content(&dir, "## Work\n- [ ] only one\n");
+
+        let result = store.add_note(5, "note");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("out of bounds"));
+    }
+
+    #[test]
+    fn delete_removes_todo_line() {
+        let dir = TempDir::new().unwrap();
+        let (store, path) =
+            store_with_content(&dir, "## Work\n- [ ] first\n- [ ] second\n- [ ] third\n");
+
+        store.delete(1).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "## Work\n- [ ] first\n- [ ] third\n");
+    }
+
+    #[test]
+    fn delete_removes_todo_with_sub_items() {
+        let dir = TempDir::new().unwrap();
+        let (store, path) = store_with_content(
+            &dir,
+            "## Work\n- [ ] task\n  - 🍅 2026-02-12 10:00\n  - 📝 a note\n- [ ] other\n",
+        );
+
+        store.delete(0).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "## Work\n- [ ] other\n");
+    }
+
+    #[test]
+    fn delete_errors_on_out_of_bounds() {
+        let dir = TempDir::new().unwrap();
+        let (store, _) = store_with_content(&dir, "## Work\n- [ ] only one\n");
+
+        let result = store.delete(5);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("out of bounds"));
     }

@@ -15,7 +15,7 @@ use std::fs;
 use std::io::{self, Write};
 
 use chat::ChatManager;
-use cli::{Cli, Command, PomodoroAction, ProjectAction, TodoAction};
+use cli::{Cli, Command, PomodoroAction, ProjectAction, TaskAction};
 use config::{Config, FileConfig};
 use llm::LlmClient;
 use todo::TodoStore;
@@ -26,9 +26,10 @@ async fn main() -> Result<()> {
 
     match cli.command {
         None => run_repl().await,
-        Some(Command::Todos { action }) => run_todos(action),
+        Some(Command::Tasks { action }) => run_tasks(action),
         Some(Command::Projects { action }) => run_projects(action),
         Some(Command::Pomodoro { action }) => run_pomodoro(action).await,
+        Some(Command::Note { text }) => run_note(&text),
     }
 }
 
@@ -165,12 +166,12 @@ fn run_projects(action: ProjectAction) -> Result<()> {
     Ok(())
 }
 
-fn run_todos(action: TodoAction) -> Result<()> {
+fn run_tasks(action: TaskAction) -> Result<()> {
     let file_config = FileConfig::from_env()?;
     let store = TodoStore::new(file_config.todos_path);
 
     match action {
-        TodoAction::Add { description } => {
+        TaskAction::Add { description } => {
             let projects = store.projects()?;
             if projects.is_empty() {
                 println!("No projects. Add a project first with: ambrogio projects add <name>");
@@ -183,29 +184,61 @@ fn run_todos(action: TodoAction) -> Result<()> {
             store.add(&projects[selection], &description)?;
             println!("Added to {}: {}", projects[selection], description);
         }
-        TodoAction::List => {
+        TaskAction::List => {
             store.print_open_todos()?;
         }
-        TodoAction::Complete => {
+        TaskAction::Complete => {
             let open = store.open_todos()?;
             if open.is_empty() {
-                println!("No open todos to complete.");
+                println!("No open tasks to complete.");
                 return Ok(());
             }
 
-            print_open_todos_for_selection(&open);
+            print_open_todos_for_selection("Select a task to complete:", &open);
             let selection = read_todo_number(open.len())?;
 
             store.complete(selection)?;
             println!("Completed: {}", open[selection].description);
+        }
+        TaskAction::Delete => {
+            let open = store.open_todos()?;
+            if open.is_empty() {
+                println!("No open tasks to delete.");
+                return Ok(());
+            }
+
+            print_open_todos_for_selection("Select a task to delete:", &open);
+            let selection = read_todo_number(open.len())?;
+
+            store.delete(selection)?;
+            println!("Deleted: {}", open[selection].description);
         }
     }
 
     Ok(())
 }
 
-fn print_open_todos_for_selection(todos: &[todo::Todo]) {
-    println!("Select a todo to complete:");
+fn run_note(text: &str) -> Result<()> {
+    let file_config = FileConfig::from_env()?;
+    let store = TodoStore::new(file_config.todos_path);
+    let open = store.open_todos()?;
+
+    if open.is_empty() {
+        println!("No open tasks. Add a task first with: ambrogio tasks add <name>");
+        return Ok(());
+    }
+
+    print_open_todos_for_selection("Select a task:", &open);
+    let selection = read_todo_number(open.len())?;
+
+    store.add_note(selection, text)?;
+    println!("Added note to: {}", open[selection].description);
+
+    Ok(())
+}
+
+fn print_open_todos_for_selection(header: &str, todos: &[todo::Todo]) {
+    println!("{}", header);
     let mut current_project = "";
     for (i, todo) in todos.iter().enumerate() {
         if todo.project != current_project {
@@ -239,19 +272,11 @@ async fn run_pomodoro(action: PomodoroAction) -> Result<()> {
             let open = store.open_todos()?;
 
             if open.is_empty() {
-                println!("No open todos. Add a todo first.");
+                println!("No open tasks. Add a task first with: ambrogio tasks add <name>");
                 return Ok(());
             }
 
-            println!("Select a todo to focus on:");
-            let mut current_project = "";
-            for (i, todo) in open.iter().enumerate() {
-                if todo.project != current_project {
-                    current_project = &todo.project;
-                    println!("\n  ## {}", current_project);
-                }
-                println!("  {}. {}", i + 1, todo.description);
-            }
+            print_open_todos_for_selection("Select a task to focus on:", &open);
             let selection = read_todo_number(open.len())?;
 
             let started_at = Local::now().naive_local();

@@ -2,7 +2,7 @@
 
 <img src="ambrogio.png" alt="Ambrogio logo" width="200">
 
-A terminal-based assistant that helps you query your daily organiser using an LLM.
+Your daily organiser assistant for the terminal. Manage tasks, projects, pomodoro sessions, and chat with your daily schedule via an LLM.
 
 ## Installation
 
@@ -18,11 +18,13 @@ Set environment variables before running:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `AMBROGIO_LLM_API_KEY` | Yes | - | API key for the LLM provider |
-| `AMBROGIO_LLM_URL` | Yes | - | Base URL of the OpenAI-compatible API |
-| `AMBROGIO_LLM_MODEL` | Yes | - | Model name to use |
 | `AMBROGIO_DAILY_ORGANISER_FILE` | Yes | - | Path to your organiser file |
+| `AMBROGIO_LLM_API_KEY` | REPL only | - | API key for the LLM provider |
+| `AMBROGIO_LLM_URL` | REPL only | - | Base URL of the OpenAI-compatible API |
+| `AMBROGIO_LLM_MODEL` | REPL only | - | Model name to use |
 | `AMBROGIO_LLM_TIMEOUT` | No | `10` | Request timeout in seconds |
+
+Only `AMBROGIO_DAILY_ORGANISER_FILE` is required for task management, projects, notes, and pomodoro. The LLM variables are only needed for the chat REPL.
 
 ### Example providers
 
@@ -35,15 +37,50 @@ Set environment variables before running:
 
 ## Usage
 
+### Tasks
+
+Manage your task list. Tasks are grouped by project in a markdown file (`todos.md`).
+
 ```bash
-export AMBROGIO_LLM_API_KEY="your-api-key"
-export AMBROGIO_LLM_URL="https://api.groq.com/openai/v1"
-export AMBROGIO_LLM_MODEL="llama-3.3-70b-versatile"
-export AMBROGIO_DAILY_ORGANISER_FILE="./daily_organiser.md"
-./target/release/ambrogio
+ambrogio tasks add 'buy milk'     # Add a task (prompts for project)
+ambrogio tasks list                # List open tasks grouped by project
+ambrogio tasks complete            # Mark a task as done (interactive)
+ambrogio tasks delete              # Remove a task and its sub-items (interactive)
 ```
 
-Example session:
+### Projects
+
+Organise tasks under projects.
+
+```bash
+ambrogio projects list             # List all projects
+ambrogio projects add 'Work'       # Create a new project
+ambrogio projects delete           # Delete a project and all its tasks (interactive)
+```
+
+### Notes
+
+Attach notes to tasks. Notes appear as indented sub-items under the task.
+
+```bash
+ambrogio note 'call back tomorrow' # Add a note to a task (interactive)
+```
+
+### Pomodoro
+
+25-minute focus sessions tied to a task. Completed pomodoros are recorded as sub-items.
+
+```bash
+ambrogio pomodoro start            # Start a pomodoro (interactive task selection)
+```
+
+### Chat REPL
+
+Run without arguments to start an interactive chat with your daily organiser.
+
+```bash
+ambrogio
+```
 
 ```
 Ambrogio - Your daily organiser assistant
@@ -56,33 +93,70 @@ ambrogio: Based on your organiser for today:
 - **12:30** lunch with Beatrice
 - **14:30** work on GeoTech
 
-you: Do I have open TODOs?
-
-ambrogio: Yes, you have 7 open TODOs:
-- ABIT: backlog for security updates
-- GeoTech: Share text includes extra
-- GeoTech: Surface values wrong or missing
-...
-
 you: quit
 Goodbye!
 ```
 
-## Organiser format
+### Aliases
 
-Ambrogio expects a markdown file with this structure:
+All commands have short aliases for quick access:
+
+| Command | Alias | Subcommand | Alias |
+|---------|-------|------------|-------|
+| `tasks` | `t` | `add` | `a` |
+| `projects` | `p` | `list` | `l` |
+| `pomodoro` | `pom` | `complete` | `c` |
+| `note` | `n` | `delete` | `d` |
+| | | `start` | `s` |
+
+```bash
+ambrogio t l                       # tasks list
+ambrogio t a 'buy milk'            # tasks add 'buy milk'
+ambrogio t c                       # tasks complete
+ambrogio t d                       # tasks delete
+ambrogio n 'some note'             # note 'some note'
+ambrogio pom s                     # pomodoro start
+ambrogio p l                       # projects list
+```
+
+## File formats
+
+### Organiser file
 
 ```markdown
 # 2026-01-23
 **09:00** meeting with team
 **12:30** lunch
 **14:00** work on project [TODO]
+**16:00** completed task [DONE]
 
 # 2026-01-22
-**09:00** completed task [DONE]
+**09:00** another day...
 ```
 
-- Dates: `# YYYY-MM-DD`
-- Scheduled items: `**HH:MM** description`
-- Open tasks: `[TODO]`
-- Completed tasks: `[DONE]`
+### Task file (`todos.md`)
+
+Located in the same directory as the organiser file.
+
+```markdown
+## Work
+- [ ] open task
+  - 🍅 2026-02-12 10:00
+  - 🍅 2026-02-12 14:30 cancelled
+  - 📝 important detail
+- [x] completed task
+
+## Personal
+- [ ] buy milk
+  - 📝 get oat milk
+```
+
+## Hooks
+
+User-defined shell scripts that run on specific events.
+
+| Hook path | Trigger |
+|-----------|---------|
+| `~/.config/ambrogio/hooks/pomodoro/stop.sh` | After a pomodoro completes (not on cancellation) |
+
+Hooks are silent no-ops if the file doesn't exist. Non-zero exit codes print a warning but don't interrupt the main flow.

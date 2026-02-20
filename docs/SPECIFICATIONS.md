@@ -4,7 +4,7 @@ This document describes the current implementation of Ambrogio.
 
 ## Overview
 
-Ambrogio is a CLI tool with subcommands for managing todos, projects, running pomodoro focus sessions, and chatting with a daily organiser via an LLM. Running without arguments starts the REPL chat interface.
+Ambrogio is a CLI tool with subcommands for managing tasks, projects, adding notes, running pomodoro focus sessions, and chatting with a daily organiser via an LLM. Running without arguments starts the REPL chat interface.
 
 ## CLI Commands
 
@@ -13,13 +13,29 @@ ambrogio                            → REPL chat (default, requires LLM env var
 ambrogio projects list               → List all projects
 ambrogio projects add 'Work'         → Create a new project
 ambrogio projects delete             → Interactive project deletion with confirmation
-ambrogio todos add 'buy milk'        → Add a todo (prompts for project selection)
-ambrogio todos list                  → Print open todos grouped by project
-ambrogio todos complete              → Interactive selection, mark as done
-ambrogio pomodoro start              → Interactive todo selection, 25-min countdown
+ambrogio tasks add 'buy milk'        → Add a task (prompts for project selection)
+ambrogio tasks list                  → Print open tasks grouped by project
+ambrogio tasks complete              → Interactive selection, mark as done
+ambrogio tasks delete                → Interactive selection, remove task and sub-items
+ambrogio note 'some text'            → Add a note to a task (interactive selection)
+ambrogio pomodoro start              → Interactive task selection, 25-min countdown
 ```
 
-The `todos`, `projects`, and `pomodoro` subcommands only require `AMBROGIO_DAILY_ORGANISER_FILE` (via `FileConfig`). The REPL requires the full LLM configuration (via `Config`).
+**Aliases:**
+
+All commands have short aliases for quick access:
+
+| Command | Alias | Subcommand | Alias |
+|---------|-------|------------|-------|
+| `tasks` | `t` | `add` | `a` |
+| `projects` | `p` | `list` | `l` |
+| `pomodoro` | `pom` | `complete` | `c` |
+| `note` | `n` | `delete` | `d` |
+| | | `start` | `s` |
+
+Examples: `ambrogio t l` = `ambrogio tasks list`, `ambrogio n 'text'` = `ambrogio note 'text'`
+
+The `tasks`, `projects`, `note`, and `pomodoro` subcommands only require `AMBROGIO_DAILY_ORGANISER_FILE` (via `FileConfig`). The REPL requires the full LLM configuration (via `Config`).
 
 ## Architecture
 
@@ -48,8 +64,8 @@ Clap derive structs for CLI parsing.
 **Types:**
 
 - `Cli`: top-level parser with optional `Command`
-- `Command`: `Todos { action }`, `Projects { action }`, or `Pomodoro { action }`
-- `TodoAction`: `Add { description }`, `List`, `Complete`
+- `Command`: `Tasks { action }`, `Projects { action }`, `Pomodoro { action }`, or `Note { text }`
+- `TaskAction`: `Add { description }`, `List`, `Complete`, `Delete`
 - `ProjectAction`: `List`, `Add { name }`, `Delete`
 - `PomodoroAction`: `Start`
 
@@ -72,7 +88,7 @@ Handles configuration via environment variables.
 **Types:**
 
 - `Config`: full LLM configuration (api_key, base_url, model, file_path, timeout) — used by REPL
-- `FileConfig`: lightweight config with just `todos_path` — used by `todos`, `projects`, and `pomodoro` subcommands. Derives `todos_path` from the parent directory of `AMBROGIO_DAILY_ORGANISER_FILE`.
+- `FileConfig`: lightweight config with just `todos_path` — used by `tasks`, `projects`, `note`, and `pomodoro` subcommands. Derives `todos_path` from the parent directory of `AMBROGIO_DAILY_ORGANISER_FILE`.
 
 **Example Configurations:**
 
@@ -94,17 +110,19 @@ File-backed todo store using markdown checkboxes, grouped by project.
 
 **File Format (`todos.md`):**
 
-Todos are grouped under `## Project Name` headers:
+Tasks are grouped under `## Project Name` headers:
 
 ```markdown
 ## Work
 - [ ] open task
   - 🍅 2026-02-12 10:00
   - 🍅 2026-02-12 14:30 cancelled
+  - 📝 important detail about this task
 - [x] completed task
 
 ## Personal
 - [ ] buy milk
+  - 📝 get oat milk
 ```
 
 Every todo must belong to a project. Todos without a `## ` header above them are ignored by `load_all()`.
@@ -121,7 +139,9 @@ Every todo must belong to a project. Todos without a `## ` header above them are
 - `load_all()` parses all `- [ ] ` and `- [x] ` lines with their project context, ignores pomodoro sub-items
 - `open_todos()` returns only unchecked items with project info
 - `complete(index)` rewrites the file, changing the nth open todo's `[ ]` to `[x]` (global index across all projects)
-- `add_pomodoro(open_index, started_at, cancelled)` inserts a pomodoro entry under the nth open todo, after any existing pomodoro sub-items
+- `delete(open_index)` removes the nth open todo and all its indented sub-items (pomodoros, notes)
+- `add_pomodoro(open_index, started_at, cancelled)` inserts a pomodoro entry under the nth open todo, after any existing sub-items
+- `add_note(open_index, text)` inserts a `📝` note entry under the nth open todo, after any existing sub-items
 - `print_open_todos()` prints open todos grouped by project with global sequential numbering
 
 ### `pomodoro.rs`
@@ -187,16 +207,19 @@ Entry point with CLI dispatch.
 
 1. Parse CLI args with clap
 2. No subcommand → `run_repl()` (loads full `Config`, reads organiser, starts REPL)
-3. `todos` subcommand → `run_todos()` (loads `FileConfig`, operates on `TodoStore`)
+3. `tasks` subcommand → `run_tasks()` (loads `FileConfig`, operates on `TodoStore`)
 4. `projects` subcommand → `run_projects()` (loads `FileConfig`, operates on `TodoStore`)
-5. `pomodoro start` → `run_pomodoro()` (loads `FileConfig`, selects todo, runs countdown, records pomodoro to `todos.md`)
+5. `note` subcommand → `run_note()` (loads `FileConfig`, selects task, adds note)
+6. `pomodoro start` → `run_pomodoro()` (loads `FileConfig`, selects task, runs countdown, records pomodoro to `todos.md`)
 
 **Interactive Flows:**
 
-- `todos add`: prompts for project selection before adding the todo
-- `todos complete`: displays todos grouped by project with global numbering, prompts for selection
-- `projects delete`: prompts for project selection, then asks for `y/N` confirmation before deleting project and all its todos
-- `pomodoro start`: displays todos grouped by project with global numbering, prompts for selection
+- `tasks add`: prompts for project selection before adding the task
+- `tasks complete`: displays tasks grouped by project with global numbering, prompts for selection
+- `tasks delete`: displays tasks grouped by project with global numbering, prompts for selection, removes task and sub-items
+- `note`: displays tasks grouped by project with global numbering, prompts for selection, adds note sub-item
+- `projects delete`: prompts for project selection, then asks for `y/N` confirmation before deleting project and all its tasks
+- `pomodoro start`: displays tasks grouped by project with global numbering, prompts for selection
 
 **REPL Commands:**
 
@@ -244,7 +267,11 @@ Located in the same directory as the organiser file, named `todos.md`.
 
 **Projects** are `## ` headers. Every todo must belong to a project.
 
-**Pomodoro entries** are indented sub-items under their todo. Format: `  - 🍅 YYYY-MM-DD HH:MM [cancelled]`. Absence of `cancelled` means the pomodoro ran to completion. Pomodoro lines are ignored by `load_all()` and `open_todos()`.
+**Pomodoro entries** are indented sub-items under their todo. Format: `  - 🍅 YYYY-MM-DD HH:MM [cancelled]`. Absence of `cancelled` means the pomodoro ran to completion.
+
+**Note entries** are indented sub-items under their todo. Format: `  - 📝 text`. Added via `ambrogio note 'text'`.
+
+Pomodoro and note sub-items are ignored by `load_all()` and `open_todos()`.
 
 ## Dependencies
 
