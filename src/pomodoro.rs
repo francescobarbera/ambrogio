@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use std::time::Duration;
 
 const POMODORO_DURATION: Duration = Duration::from_secs(25 * 60);
+const BREAK_DURATION: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Debug, PartialEq)]
 pub enum Outcome {
@@ -18,16 +19,24 @@ pub fn format_countdown(remaining: Duration) -> String {
 }
 
 pub async fn run(description: &str) -> Result<Outcome> {
-    println!("Starting pomodoro: {}", description);
+    run_timer(POMODORO_DURATION, "🍅", description).await
+}
+
+pub async fn run_break() -> Result<Outcome> {
+    run_timer(BREAK_DURATION, "☕", "Break").await
+}
+
+async fn run_timer(duration: Duration, emoji: &str, description: &str) -> Result<Outcome> {
+    println!("Starting {}: {}", emoji, description);
     println!("Press Ctrl+C to cancel\n");
 
-    let mut remaining = POMODORO_DURATION;
+    let mut remaining = duration;
 
     loop {
         let countdown = format_countdown(remaining);
         print!(
-            "\x1b]0;🍅 {} - {}\x07\r\x1b[K  {} - {}",
-            countdown, description, countdown, description
+            "\x1b]0;{} {} - {}\x07\r\x1b[K  {} - {}",
+            emoji, countdown, description, countdown, description
         );
         io::stdout().flush()?;
 
@@ -42,7 +51,7 @@ pub async fn run(description: &str) -> Result<Outcome> {
             }
             _ = tokio::signal::ctrl_c() => {
                 print!("\x1b]0;\x07");
-                println!("\n\nPomodoro cancelled.");
+                println!("\n\nCancelled.");
                 return Ok(Outcome::Cancelled);
             }
         }
@@ -50,7 +59,7 @@ pub async fn run(description: &str) -> Result<Outcome> {
 
     print!("\x1b]0;\x07");
     print!("\x07");
-    println!("\n\nPomodoro complete!");
+    println!("\n\nDone!");
 
     Ok(Outcome::Completed)
 }
@@ -82,5 +91,10 @@ mod tests {
     #[test]
     fn pomodoro_duration_is_25_minutes() {
         assert_eq!(POMODORO_DURATION, Duration::from_secs(25 * 60));
+    }
+
+    #[test]
+    fn break_duration_is_5_minutes() {
+        assert_eq!(BREAK_DURATION, Duration::from_secs(5 * 60));
     }
 }

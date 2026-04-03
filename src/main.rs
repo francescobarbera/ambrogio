@@ -264,29 +264,120 @@ fn read_todo_number(count: usize) -> Result<usize> {
     }
 }
 
+fn select_task(store: &TodoStore) -> Result<(usize, String)> {
+    let open = store.open_todos()?;
+
+    if open.is_empty() {
+        anyhow::bail!("No open tasks. Add a task first with: ambrogio tasks add <name>");
+    }
+
+    print_open_todos_for_selection("Select a task to focus on:", &open);
+    let selection = read_todo_number(open.len())?;
+    Ok((selection, open[selection].description.clone()))
+}
+
+fn select_or_create_task(store: &TodoStore) -> Result<(usize, String)> {
+    let open = store.open_todos()?;
+    let projects = store.projects()?;
+
+    println!("Select a task to focus on:");
+
+    let mut current_project = "";
+    for (i, todo) in open.iter().enumerate() {
+        if todo.project != current_project {
+            current_project = &todo.project;
+            println!("\n  ## {}", current_project);
+        }
+        println!("  {}. {}", i + 1, todo.description);
+    }
+
+    if !projects.is_empty() {
+        println!("\n  {}. Create a new task", open.len() + 1);
+    }
+
+    let max = if projects.is_empty() {
+        open.len()
+    } else {
+        open.len() + 1
+    };
+
+    if max == 0 {
+        anyhow::bail!(
+            "No open tasks and no projects. Add a project first with: ambrogio projects add <name>"
+        );
+    }
+
+    let selection = loop {
+        print!("Enter number: ");
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        match input.trim().parse::<usize>() {
+            Ok(n) if n >= 1 && n <= max => break n - 1,
+            _ => println!("Please enter a number between 1 and {}", max),
+        }
+    };
+
+    if selection < open.len() {
+        return Ok((selection, open[selection].description.clone()));
+    }
+
+    print!("Task description: ");
+    io::stdout().flush()?;
+    let mut description = String::new();
+    io::stdin().read_line(&mut description)?;
+    let description = description.trim().to_string();
+
+    if description.is_empty() {
+        anyhow::bail!("Task description cannot be empty");
+    }
+
+    let items: Vec<&str> = projects.iter().map(|p| p.as_str()).collect();
+    let project_idx = prompt_selection("Select a project:", &items)?;
+
+    store.add(&projects[project_idx], &description)?;
+    println!("Added to {}: {}", projects[project_idx], description);
+
+    let open = store.open_todos()?;
+    let new_index = open
+        .iter()
+        .position(|t| t.description == description && t.project == projects[project_idx])
+        .ok_or_else(|| anyhow::anyhow!("Failed to find newly created task"))?;
+
+    Ok((new_index, description))
+}
+
 async fn run_pomodoro(action: PomodoroAction) -> Result<()> {
     match action {
         PomodoroAction::Start => {
             let file_config = FileConfig::from_env()?;
             let store = TodoStore::new(file_config.todos_path);
-            let open = store.open_todos()?;
 
-            if open.is_empty() {
-                println!("No open tasks. Add a task first with: ambrogio tasks add <name>");
-                return Ok(());
-            }
+            let (mut selection, mut description) = select_task(&store)?;
 
-            print_open_todos_for_selection("Select a task to focus on:", &open);
-            let selection = read_todo_number(open.len())?;
+            loop {
+                let started_at = Local::now().naive_local();
+                let outcome = pomodoro::run(&description).await?;
+                let cancelled = outcome == pomodoro::Outcome::Cancelled;
 
-            let started_at = Local::now().naive_local();
-            let outcome = pomodoro::run(&open[selection].description).await?;
-            let cancelled = outcome == pomodoro::Outcome::Cancelled;
+                store.add_pomodoro(selection, started_at, cancelled)?;
 
-            store.add_pomodoro(selection, started_at, cancelled)?;
+                if cancelled {
+                    break;
+                }
 
-            if outcome == pomodoro::Outcome::Completed {
                 hooks::run("pomodoro", "stop")?;
+
+                let break_outcome = pomodoro::run_break().await?;
+                if break_outcome == pomodoro::Outcome::Cancelled {
+                    break;
+                }
+
+                let result = select_or_create_task(&store)?;
+                selection = result.0;
+                description = result.1;
             }
         }
     }

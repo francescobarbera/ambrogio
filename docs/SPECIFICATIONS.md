@@ -151,6 +151,7 @@ Countdown timer for focus sessions.
 **Constants:**
 
 - `POMODORO_DURATION`: 25 minutes
+- `BREAK_DURATION`: 5 minutes
 
 **Types:**
 
@@ -158,7 +159,9 @@ Countdown timer for focus sessions.
 
 **Functions:**
 
-- `run(description)`: starts a 25-minute countdown, updating the terminal every second with `MM:SS - description`. Plays terminal bell (`\x07`) on completion. Ctrl+C cancels. Returns `Outcome::Completed` or `Outcome::Cancelled`.
+- `run(description)`: starts a 25-minute pomodoro countdown. Delegates to `run_timer()` with the 🍅 emoji.
+- `run_break()`: starts a 5-minute break countdown. Delegates to `run_timer()` with the ☕ emoji.
+- `run_timer(duration, emoji, description)`: generic countdown timer, updating the terminal every second with `emoji MM:SS - description` in the tab title and `MM:SS - description` in the terminal. Plays terminal bell (`\x07`) on completion. Ctrl+C cancels. Returns `Outcome::Completed` or `Outcome::Cancelled`.
 - `format_countdown(duration)`: formats a `Duration` as `MM:SS`
 
 ### `llm.rs`
@@ -210,7 +213,7 @@ Entry point with CLI dispatch.
 3. `tasks` subcommand → `run_tasks()` (loads `FileConfig`, operates on `TodoStore`)
 4. `projects` subcommand → `run_projects()` (loads `FileConfig`, operates on `TodoStore`)
 5. `note` subcommand → `run_note()` (loads `FileConfig`, selects task, adds note)
-6. `pomodoro start` → `run_pomodoro()` (loads `FileConfig`, selects task, runs countdown, records pomodoro to `todos.md`)
+6. `pomodoro start` → `run_pomodoro()` (loads `FileConfig`, selects task, runs countdown loop with breaks, records each pomodoro to `todos.md`)
 
 **Interactive Flows:**
 
@@ -219,7 +222,7 @@ Entry point with CLI dispatch.
 - `tasks delete`: displays tasks grouped by project with global numbering, prompts for selection, removes task and sub-items
 - `note`: displays tasks grouped by project with global numbering, prompts for selection, adds note sub-item
 - `projects delete`: prompts for project selection, then asks for `y/N` confirmation before deleting project and all its tasks
-- `pomodoro start`: displays tasks grouped by project with global numbering, prompts for selection
+- `pomodoro start`: displays tasks grouped by project with global numbering, prompts for selection. After each completed pomodoro, a 5-minute break starts. After the break, the user selects the next task (from the open tasks list or by creating a new task with description and project selection). The cycle repeats until the user presses Ctrl+C during a pomodoro or break.
 
 **REPL Commands:**
 
