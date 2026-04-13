@@ -314,6 +314,7 @@ Ambrogio supports user-defined shell scripts that run on specific events.
 | Hook path | Trigger |
 |-----------|---------|
 | `pomodoro/stop.sh` | After a pomodoro completes successfully (not on cancellation) |
+| `break/stop.sh` | After a break completes successfully (not on cancellation) |
 
 ### `hooks.rs`
 

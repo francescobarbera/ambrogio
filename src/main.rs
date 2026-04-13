@@ -375,6 +375,8 @@ async fn run_pomodoro(action: PomodoroAction) -> Result<()> {
                     break;
                 }
 
+                hooks::run("break", "stop")?;
+
                 let result = select_or_create_task(&store)?;
                 selection = result.0;
                 description = result.1;
