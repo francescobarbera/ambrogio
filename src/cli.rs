@@ -9,17 +9,11 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Manage your task list
+    /// Manage today's task list
     #[command(visible_alias = "t")]
     Tasks {
         #[command(subcommand)]
         action: TaskAction,
-    },
-    /// Manage projects
-    #[command(visible_alias = "p")]
-    Projects {
-        #[command(subcommand)]
-        action: ProjectAction,
     },
     /// Pomodoro focus sessions
     #[command(visible_alias = "pom")]
@@ -27,44 +21,22 @@ pub enum Command {
         #[command(subcommand)]
         action: PomodoroAction,
     },
-    /// Add a note to a task
-    #[command(visible_alias = "n")]
-    Note {
-        /// The note text
-        text: String,
-    },
 }
 
 #[derive(Subcommand)]
 pub enum TaskAction {
-    /// Add a new task
+    /// Add a new task to today's list
     #[command(visible_alias = "a")]
     Add {
         /// The task description
         description: String,
     },
-    /// List open tasks
+    /// List today's open tasks
     #[command(visible_alias = "l")]
     List,
-    /// Mark a task as complete
+    /// Mark one of today's tasks as complete
     #[command(visible_alias = "c")]
     Complete,
-    /// Delete a task
-    #[command(visible_alias = "d")]
-    Delete,
-}
-
-#[derive(Subcommand)]
-pub enum ProjectAction {
-    /// List all projects
-    List,
-    /// Add a new project
-    Add {
-        /// The project name
-        name: String,
-    },
-    /// Delete a project and all its todos
-    Delete,
 }
 
 #[derive(Subcommand)]
@@ -120,59 +92,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_tasks_delete() {
-        let cli = Cli::parse_from(["ambrogio", "tasks", "delete"]);
-        assert!(matches!(
-            cli.command,
-            Some(Command::Tasks {
-                action: TaskAction::Delete
-            })
-        ));
-    }
-
-    #[test]
-    fn parses_note() {
-        let cli = Cli::parse_from(["ambrogio", "note", "some note text"]);
-        match cli.command {
-            Some(Command::Note { text }) => assert_eq!(text, "some note text"),
-            _ => panic!("expected Note"),
-        }
-    }
-
-    #[test]
-    fn parses_projects_list() {
-        let cli = Cli::parse_from(["ambrogio", "projects", "list"]);
-        assert!(matches!(
-            cli.command,
-            Some(Command::Projects {
-                action: ProjectAction::List
-            })
-        ));
-    }
-
-    #[test]
-    fn parses_projects_add() {
-        let cli = Cli::parse_from(["ambrogio", "projects", "add", "Work"]);
-        match cli.command {
-            Some(Command::Projects {
-                action: ProjectAction::Add { name },
-            }) => assert_eq!(name, "Work"),
-            _ => panic!("expected Projects Add"),
-        }
-    }
-
-    #[test]
-    fn parses_projects_delete() {
-        let cli = Cli::parse_from(["ambrogio", "projects", "delete"]);
-        assert!(matches!(
-            cli.command,
-            Some(Command::Projects {
-                action: ProjectAction::Delete
-            })
-        ));
-    }
-
-    #[test]
     fn parses_pomodoro_start() {
         let cli = Cli::parse_from(["ambrogio", "pomodoro", "start"]);
         assert!(matches!(
@@ -217,37 +136,6 @@ mod tests {
     }
 
     #[test]
-    fn alias_t_d_parses_as_tasks_delete() {
-        let cli = Cli::parse_from(["ambrogio", "t", "d"]);
-        assert!(matches!(
-            cli.command,
-            Some(Command::Tasks {
-                action: TaskAction::Delete
-            })
-        ));
-    }
-
-    #[test]
-    fn alias_n_parses_as_note() {
-        let cli = Cli::parse_from(["ambrogio", "n", "a note"]);
-        match cli.command {
-            Some(Command::Note { text }) => assert_eq!(text, "a note"),
-            _ => panic!("expected Note via alias"),
-        }
-    }
-
-    #[test]
-    fn alias_p_parses_as_projects() {
-        let cli = Cli::parse_from(["ambrogio", "p", "list"]);
-        assert!(matches!(
-            cli.command,
-            Some(Command::Projects {
-                action: ProjectAction::List
-            })
-        ));
-    }
-
-    #[test]
     fn alias_pom_s_parses_as_pomodoro_start() {
         let cli = Cli::parse_from(["ambrogio", "pom", "s"]);
         assert!(matches!(
@@ -256,5 +144,23 @@ mod tests {
                 action: PomodoroAction::Start
             })
         ));
+    }
+
+    #[test]
+    fn rejects_removed_tasks_delete() {
+        assert!(Cli::try_parse_from(["ambrogio", "tasks", "delete"]).is_err());
+        assert!(Cli::try_parse_from(["ambrogio", "t", "d"]).is_err());
+    }
+
+    #[test]
+    fn rejects_removed_projects_command() {
+        assert!(Cli::try_parse_from(["ambrogio", "projects", "list"]).is_err());
+        assert!(Cli::try_parse_from(["ambrogio", "p", "list"]).is_err());
+    }
+
+    #[test]
+    fn rejects_removed_note_command() {
+        assert!(Cli::try_parse_from(["ambrogio", "note", "some text"]).is_err());
+        assert!(Cli::try_parse_from(["ambrogio", "n", "some text"]).is_err());
     }
 }

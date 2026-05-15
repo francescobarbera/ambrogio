@@ -1,10 +1,10 @@
 mod chat;
 mod cli;
 mod config;
+mod daily;
 mod hooks;
 mod llm;
 mod pomodoro;
-mod todo;
 
 use anyhow::Result;
 use chrono::Local;
@@ -15,10 +15,9 @@ use std::fs;
 use std::io::{self, Write};
 
 use chat::ChatManager;
-use cli::{Cli, Command, PomodoroAction, ProjectAction, TaskAction};
-use config::{Config, FileConfig};
+use cli::{Cli, Command, PomodoroAction, TaskAction};
+use config::Config;
 use llm::LlmClient;
-use todo::TodoStore;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,29 +26,7 @@ async fn main() -> Result<()> {
     match cli.command {
         None => run_repl().await,
         Some(Command::Tasks { action }) => run_tasks(action),
-        Some(Command::Projects { action }) => run_projects(action),
         Some(Command::Pomodoro { action }) => run_pomodoro(action).await,
-        Some(Command::Note { text }) => run_note(&text),
-    }
-}
-
-fn prompt_selection(prompt: &str, items: &[&str]) -> Result<usize> {
-    println!("{}", prompt);
-    for (i, item) in items.iter().enumerate() {
-        println!("  {}. {}", i + 1, item);
-    }
-
-    loop {
-        print!("Enter number: ");
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-
-        match input.trim().parse::<usize>() {
-            Ok(n) if n >= 1 && n <= items.len() => return Ok(n - 1),
-            _ => println!("Please enter a number between 1 and {}", items.len()),
-        }
     }
 }
 
@@ -98,11 +75,7 @@ async fn run_repl() -> Result<()> {
                     }
                 }
             }
-            Err(ReadlineError::Interrupted) => {
-                println!("Goodbye!");
-                break;
-            }
-            Err(ReadlineError::Eof) => {
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 println!("Goodbye!");
                 break;
             }
@@ -116,140 +89,17 @@ async fn run_repl() -> Result<()> {
     Ok(())
 }
 
-fn run_projects(action: ProjectAction) -> Result<()> {
-    let file_config = FileConfig::from_env()?;
-    let store = TodoStore::new(file_config.todos_path);
-
-    match action {
-        ProjectAction::List => {
-            let projects = store.projects()?;
-            if projects.is_empty() {
-                println!("No projects.");
-            } else {
-                for (i, project) in projects.iter().enumerate() {
-                    println!("  {}. {}", i + 1, project);
-                }
-            }
-        }
-        ProjectAction::Add { name } => {
-            store.add_project(&name)?;
-            println!("Added project: {}", name);
-        }
-        ProjectAction::Delete => {
-            let projects = store.projects()?;
-            if projects.is_empty() {
-                println!("No projects to delete.");
-                return Ok(());
-            }
-
-            let items: Vec<&str> = projects.iter().map(|p| p.as_str()).collect();
-            let selection = prompt_selection("Select a project to delete:", &items)?;
-
-            print!(
-                "Delete '{}' and all its todos? (y/N): ",
-                projects[selection]
-            );
-            io::stdout().flush()?;
-
-            let mut confirm = String::new();
-            io::stdin().read_line(&mut confirm)?;
-
-            if confirm.trim().eq_ignore_ascii_case("y") {
-                store.delete_project(&projects[selection])?;
-                println!("Deleted project: {}", projects[selection]);
-            } else {
-                println!("Cancelled.");
-            }
-        }
-    }
-
-    Ok(())
+fn today() -> chrono::NaiveDate {
+    Local::now().date_naive()
 }
 
-fn run_tasks(action: TaskAction) -> Result<()> {
-    let file_config = FileConfig::from_env()?;
-    let store = TodoStore::new(file_config.todos_path);
-
-    match action {
-        TaskAction::Add { description } => {
-            let projects = store.projects()?;
-            if projects.is_empty() {
-                println!("No projects. Add a project first with: ambrogio projects add <name>");
-                return Ok(());
-            }
-
-            let items: Vec<&str> = projects.iter().map(|p| p.as_str()).collect();
-            let selection = prompt_selection("Select a project:", &items)?;
-
-            store.add(&projects[selection], &description)?;
-            println!("Added to {}: {}", projects[selection], description);
-        }
-        TaskAction::List => {
-            store.print_open_todos()?;
-        }
-        TaskAction::Complete => {
-            let open = store.open_todos()?;
-            if open.is_empty() {
-                println!("No open tasks to complete.");
-                return Ok(());
-            }
-
-            print_open_todos_for_selection("Select a task to complete:", &open);
-            let selection = read_todo_number(open.len())?;
-
-            store.complete(selection)?;
-            println!("Completed: {}", open[selection].description);
-        }
-        TaskAction::Delete => {
-            let open = store.open_todos()?;
-            if open.is_empty() {
-                println!("No open tasks to delete.");
-                return Ok(());
-            }
-
-            print_open_todos_for_selection("Select a task to delete:", &open);
-            let selection = read_todo_number(open.len())?;
-
-            store.delete(selection)?;
-            println!("Deleted: {}", open[selection].description);
-        }
-    }
-
-    Ok(())
-}
-
-fn run_note(text: &str) -> Result<()> {
-    let file_config = FileConfig::from_env()?;
-    let store = TodoStore::new(file_config.todos_path);
-    let open = store.open_todos()?;
-
-    if open.is_empty() {
-        println!("No open tasks. Add a task first with: ambrogio tasks add <name>");
-        return Ok(());
-    }
-
-    print_open_todos_for_selection("Select a task:", &open);
-    let selection = read_todo_number(open.len())?;
-
-    store.add_note(selection, text)?;
-    println!("Added note to: {}", open[selection].description);
-
-    Ok(())
-}
-
-fn print_open_todos_for_selection(header: &str, todos: &[todo::Todo]) {
-    println!("{}", header);
-    let mut current_project = "";
-    for (i, todo) in todos.iter().enumerate() {
-        if todo.project != current_project {
-            current_project = &todo.project;
-            println!("\n  ## {}", current_project);
-        }
-        println!("  {}. {}", i + 1, todo.description);
+fn print_open_tasks(tasks: &[String]) {
+    for (i, task) in tasks.iter().enumerate() {
+        println!("  {}. {}", i + 1, task);
     }
 }
 
-fn read_todo_number(count: usize) -> Result<usize> {
+fn read_task_number(count: usize) -> Result<usize> {
     loop {
         print!("Enter number: ");
         io::stdout().flush()?;
@@ -264,110 +114,65 @@ fn read_todo_number(count: usize) -> Result<usize> {
     }
 }
 
-fn select_task(store: &TodoStore) -> Result<(usize, String)> {
-    let open = store.open_todos()?;
-
+fn select_today_task(path: &std::path::Path, header: &str) -> Result<Option<(usize, String)>> {
+    let open = daily::today_open(path, today())?;
     if open.is_empty() {
-        anyhow::bail!("No open tasks. Add a task first with: ambrogio tasks add <name>");
+        return Ok(None);
     }
 
-    print_open_todos_for_selection("Select a task to focus on:", &open);
-    let selection = read_todo_number(open.len())?;
-    Ok((selection, open[selection].description.clone()))
+    println!("{}", header);
+    print_open_tasks(&open);
+    let selection = read_task_number(open.len())?;
+    Ok(Some((selection, open[selection].clone())))
 }
 
-fn select_or_create_task(store: &TodoStore) -> Result<(usize, String)> {
-    let open = store.open_todos()?;
-    let projects = store.projects()?;
+fn run_tasks(action: TaskAction) -> Result<()> {
+    let path = config::organiser_path_from_env()?;
 
-    println!("Select a task to focus on:");
-
-    let mut current_project = "";
-    for (i, todo) in open.iter().enumerate() {
-        if todo.project != current_project {
-            current_project = &todo.project;
-            println!("\n  ## {}", current_project);
+    match action {
+        TaskAction::Add { description } => {
+            daily::add(&path, today(), &description)?;
+            println!("Added: {}", description);
         }
-        println!("  {}. {}", i + 1, todo.description);
-    }
-
-    if !projects.is_empty() {
-        println!("\n  {}. Create a new task", open.len() + 1);
-    }
-
-    let max = if projects.is_empty() {
-        open.len()
-    } else {
-        open.len() + 1
-    };
-
-    if max == 0 {
-        anyhow::bail!(
-            "No open tasks and no projects. Add a project first with: ambrogio projects add <name>"
-        );
-    }
-
-    let selection = loop {
-        print!("Enter number: ");
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-
-        match input.trim().parse::<usize>() {
-            Ok(n) if n >= 1 && n <= max => break n - 1,
-            _ => println!("Please enter a number between 1 and {}", max),
+        TaskAction::List => {
+            let open = daily::today_open(&path, today())?;
+            if open.is_empty() {
+                println!("No tasks for today.");
+            } else {
+                print_open_tasks(&open);
+            }
         }
-    };
-
-    if selection < open.len() {
-        return Ok((selection, open[selection].description.clone()));
+        TaskAction::Complete => match select_today_task(&path, "Select a task to complete:")? {
+            None => println!("No tasks for today."),
+            Some((index, description)) => {
+                daily::complete(&path, today(), index)?;
+                println!("Completed: {}", description);
+            }
+        },
     }
 
-    print!("Task description: ");
-    io::stdout().flush()?;
-    let mut description = String::new();
-    io::stdin().read_line(&mut description)?;
-    let description = description.trim().to_string();
-
-    if description.is_empty() {
-        anyhow::bail!("Task description cannot be empty");
-    }
-
-    let items: Vec<&str> = projects.iter().map(|p| p.as_str()).collect();
-    let project_idx = prompt_selection("Select a project:", &items)?;
-
-    store.add(&projects[project_idx], &description)?;
-    println!("Added to {}: {}", projects[project_idx], description);
-
-    let open = store.open_todos()?;
-    let new_index = open
-        .iter()
-        .position(|t| t.description == description && t.project == projects[project_idx])
-        .ok_or_else(|| anyhow::anyhow!("Failed to find newly created task"))?;
-
-    Ok((new_index, description))
+    Ok(())
 }
 
 async fn run_pomodoro(action: PomodoroAction) -> Result<()> {
     match action {
         PomodoroAction::Start => {
-            let file_config = FileConfig::from_env()?;
-            let store = TodoStore::new(file_config.todos_path);
+            let path = config::organiser_path_from_env()?;
 
-            let (mut selection, mut description) = select_task(&store)?;
+            let Some((mut selection, mut description)) =
+                select_today_task(&path, "Select a task to focus on:")?
+            else {
+                println!("No tasks for today.");
+                return Ok(());
+            };
 
             loop {
-                let started_at = Local::now().naive_local();
                 let outcome = pomodoro::run(&description).await?;
-                let cancelled = outcome == pomodoro::Outcome::Cancelled;
-
-                store.add_pomodoro(selection, started_at, cancelled)?;
-
-                if cancelled {
+                if outcome == pomodoro::Outcome::Cancelled {
                     break;
                 }
 
+                daily::add_pomodoro(&path, today(), selection)?;
                 hooks::run("pomodoro", "stop")?;
 
                 let break_outcome = pomodoro::run_break().await?;
@@ -377,9 +182,16 @@ async fn run_pomodoro(action: PomodoroAction) -> Result<()> {
 
                 hooks::run("break", "stop")?;
 
-                let result = select_or_create_task(&store)?;
-                selection = result.0;
-                description = result.1;
+                match select_today_task(&path, "Select a task to focus on:")? {
+                    None => {
+                        println!("No tasks for today.");
+                        break;
+                    }
+                    Some((next_idx, next_desc)) => {
+                        selection = next_idx;
+                        description = next_desc;
+                    }
+                }
             }
         }
     }

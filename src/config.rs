@@ -48,28 +48,21 @@ impl Config {
     }
 }
 
-pub struct FileConfig {
-    pub todos_path: PathBuf,
-}
-
-impl FileConfig {
-    pub fn from_env() -> Result<Self> {
-        let organiser_path = require_env("AMBROGIO_DAILY_ORGANISER_FILE")?;
-        let organiser = PathBuf::from(&organiser_path);
-
-        let parent = organiser
-            .parent()
-            .ok_or_else(|| anyhow::anyhow!("Cannot determine directory of organiser file"))?;
-
-        Ok(FileConfig {
-            todos_path: parent.join("todos.md"),
-        })
-    }
+/// Returns the value of `AMBROGIO_DAILY_ORGANISER_FILE` as a `PathBuf`.
+/// Errors if the variable is unset or empty.
+pub fn organiser_path_from_env() -> Result<PathBuf> {
+    Ok(PathBuf::from(require_env("AMBROGIO_DAILY_ORGANISER_FILE")?))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // `std::env::set_var` is not thread-safe and `cargo test` runs tests in
+    // parallel. Tests that touch `AMBROGIO_DAILY_ORGANISER_FILE` serialise
+    // on this mutex.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn default_timeout_is_10_seconds() {
@@ -112,23 +105,22 @@ mod tests {
     }
 
     #[test]
-    fn file_config_derives_todos_path_from_organiser() {
+    fn organiser_path_from_env_returns_env_var_verbatim() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var(
             "AMBROGIO_DAILY_ORGANISER_FILE",
             "/home/user/notes/organiser.md",
         );
-        let config = FileConfig::from_env().unwrap();
-        assert_eq!(
-            config.todos_path,
-            PathBuf::from("/home/user/notes/todos.md")
-        );
+        let path = organiser_path_from_env().unwrap();
+        assert_eq!(path, PathBuf::from("/home/user/notes/organiser.md"));
         env::remove_var("AMBROGIO_DAILY_ORGANISER_FILE");
     }
 
     #[test]
-    fn file_config_errors_on_missing_env_var() {
+    fn organiser_path_from_env_errors_on_missing_var() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::remove_var("AMBROGIO_DAILY_ORGANISER_FILE");
-        let result = FileConfig::from_env();
+        let result = organiser_path_from_env();
         assert!(result.is_err());
     }
 }
