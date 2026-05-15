@@ -3,6 +3,8 @@
 **Status:** done
 **Date:** 2026-04-03
 
+> **Note (2026-05-15):** Step 4's `select_or_create_task` ("Create new task" inline branch) and the project-selection prompt in step 4 are superseded by [ADR 002](002-daily-organiser-as-source-of-truth.md), which removes the project concept and the inline task-creation flow. The continuous loop (steps 1–2, 5) survives; `select_task`'s signature changed from `(usize, Vec<Todo>)` to `Result<Option<(usize, String)>>` so the loop's "no more tasks" path is an exhaustive `match` arm.
+
 ## Context
 
 The pomodoro command currently runs a single 25-minute session on a selected task and exits. Users want a continuous flow: pomodoro → break → pick next task → pomodoro → break → ... until they decide to stop with Ctrl+C.

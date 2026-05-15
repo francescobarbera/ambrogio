@@ -2,7 +2,7 @@
 
 <img src="ambrogio.png" alt="Ambrogio logo" width="200">
 
-Your daily organiser assistant for the terminal. Manage tasks, projects, pomodoro sessions, and chat with your daily schedule via an LLM.
+Your daily organiser assistant for the terminal. Manage today's tasks, run pomodoro sessions, and chat with your daily schedule via an LLM.
 
 ## Installation
 
@@ -18,13 +18,13 @@ Set environment variables before running:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `AMBROGIO_DAILY_ORGANISER_FILE` | Yes | - | Path to your organiser file |
+| `AMBROGIO_DAILY_ORGANISER_FILE` | Yes | - | Path to your daily organiser file |
 | `AMBROGIO_LLM_API_KEY` | REPL only | - | API key for the LLM provider |
 | `AMBROGIO_LLM_URL` | REPL only | - | Base URL of the OpenAI-compatible API |
 | `AMBROGIO_LLM_MODEL` | REPL only | - | Model name to use |
 | `AMBROGIO_LLM_TIMEOUT` | No | `10` | Request timeout in seconds |
 
-Only `AMBROGIO_DAILY_ORGANISER_FILE` is required for task management, projects, notes, and pomodoro. The LLM variables are only needed for the chat REPL.
+Only `AMBROGIO_DAILY_ORGANISER_FILE` is required for task management and pomodoro. The LLM variables are only needed for the chat REPL.
 
 ### Example providers
 
@@ -39,39 +39,20 @@ Only `AMBROGIO_DAILY_ORGANISER_FILE` is required for task management, projects, 
 
 ### Tasks
 
-Manage your task list. Tasks are grouped by project in a markdown file (`todos.md`).
+All task commands operate on **today's** `## Todos:` block inside the daily organiser file. You decide each morning which tasks belong to today by manually copying unfinished items from the previous day's section — that planning step is intentional. If today's section is missing, `list`, `complete`, and `pomodoro` print "No tasks for today." Only `tasks add` creates the section.
 
 ```bash
-ambrogio tasks add 'buy milk'     # Add a task (prompts for project)
-ambrogio tasks list                # List open tasks grouped by project
-ambrogio tasks complete            # Mark a task as done (interactive)
-ambrogio tasks delete              # Remove a task and its sub-items (interactive)
-```
-
-### Projects
-
-Organise tasks under projects.
-
-```bash
-ambrogio projects list             # List all projects
-ambrogio projects add 'Work'       # Create a new project
-ambrogio projects delete           # Delete a project and all its tasks (interactive)
-```
-
-### Notes
-
-Attach notes to tasks. Notes appear as indented sub-items under the task.
-
-```bash
-ambrogio note 'call back tomorrow' # Add a note to a task (interactive)
+ambrogio tasks add 'buy milk'     # Append - [ ] buy milk to today's Todos
+ambrogio tasks list                # List today's open tasks
+ambrogio tasks complete            # Flip [ ] → [x] on a chosen task
 ```
 
 ### Pomodoro
 
-25-minute focus sessions tied to a task. Completed pomodoros are recorded as sub-items.
+25-minute focus sessions tied to one of today's open tasks. Each completed pomodoro appends a `🍅` to the task line. After each completed pomodoro a 5-minute break starts, then you pick the next task. Ctrl+C exits.
 
 ```bash
-ambrogio pomodoro start            # Start a pomodoro (interactive task selection)
+ambrogio pomodoro start
 ```
 
 ### Chat REPL
@@ -89,9 +70,9 @@ Type 'quit' or 'exit' to leave
 you: What do I have to do today?
 
 ambrogio: Based on your organiser for today:
-- **09:00** work on god mode feature
-- **12:30** lunch with Beatrice
-- **14:30** work on GeoTech
+- applicare le modifiche suggerite da Raffaele
+- finire la configurazione di aws-infrastructure
+- fixare i problemi di GeoTech
 
 you: quit
 Goodbye!
@@ -99,57 +80,39 @@ Goodbye!
 
 ### Aliases
 
-All commands have short aliases for quick access:
-
 | Command | Alias | Subcommand | Alias |
 |---------|-------|------------|-------|
 | `tasks` | `t` | `add` | `a` |
-| `projects` | `p` | `list` | `l` |
-| `pomodoro` | `pom` | `complete` | `c` |
-| `note` | `n` | `delete` | `d` |
+| `pomodoro` | `pom` | `list` | `l` |
+| | | `complete` | `c` |
 | | | `start` | `s` |
 
 ```bash
 ambrogio t l                       # tasks list
 ambrogio t a 'buy milk'            # tasks add 'buy milk'
 ambrogio t c                       # tasks complete
-ambrogio t d                       # tasks delete
-ambrogio n 'some note'             # note 'some note'
 ambrogio pom s                     # pomodoro start
-ambrogio p l                       # projects list
 ```
 
-## File formats
-
-### Organiser file
+## Organiser file format
 
 ```markdown
-# 2026-01-23
-**09:00** meeting with team
-**12:30** lunch
-**14:00** work on project [TODO]
-**16:00** completed task [DONE]
+# 2026-05-15
+## Todos:
+- [ ] applicare le modifiche suggerite da Raffaele
+- [ ] finire la configurazione di aws-infrastructure 🍅🍅
+- [x] fixare i problemi di GeoTech 🍅🍅🍅
+## Logs:
+**08:30** [post](...) ...
 
-# 2026-01-22
-**09:00** another day...
+# 2026-05-14
+...
 ```
 
-### Task file (`todos.md`)
-
-Located in the same directory as the organiser file.
-
-```markdown
-## Work
-- [ ] open task
-  - 🍅 2026-02-12 10:00
-  - 🍅 2026-02-12 14:30 cancelled
-  - 📝 important detail
-- [x] completed task
-
-## Personal
-- [ ] buy milk
-  - 📝 get oat milk
-```
+- Day headers: `# YYYY-MM-DD` (one hash, then space, then ISO date).
+- Today's tasks live under `## Todos:`. Other subsections (such as `## Logs:`) are never read or written by `ambrogio`.
+- Tasks may be written as `- [ ] foo` (what `tasks add` writes) or `[ ] foo  ` (manual style, dashless). Both forms are recognised; modifications preserve the line's leading form and trailing whitespace.
+- Pomodoros accumulate as `🍅` characters at the end of the task text, before any trailing whitespace.
 
 ## Hooks
 
@@ -158,5 +121,6 @@ User-defined shell scripts that run on specific events.
 | Hook path | Trigger |
 |-----------|---------|
 | `~/.config/ambrogio/hooks/pomodoro/stop.sh` | After a pomodoro completes (not on cancellation) |
+| `~/.config/ambrogio/hooks/break/stop.sh` | After a break completes (not on cancellation) |
 
 Hooks are silent no-ops if the file doesn't exist. Non-zero exit codes print a warning but don't interrupt the main flow.
